@@ -30,11 +30,6 @@ sudo mysql_secure_installation
 
 # Configure MySQL for Laravel
 print_header "Configuring MySQL for Laravel"
-
-# Generate random password for Laravel database user
-DB_PASSWORD=$(openssl rand -base64 32)
-ROOT_PASSWORD=$(openssl rand -base64 32)
-
 print_status "Configuring MySQL database and user..."
 print_status "Creating database: $DB_NAME"
 print_status "Creating user: $DB_USER"
@@ -49,7 +44,7 @@ CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
 
 -- Create admin user for easier management
-CREATE USER IF NOT EXISTS 'admin'@'localhost' IDENTIFIED BY '$ROOT_PASSWORD';
+CREATE USER IF NOT EXISTS 'admin'@'localhost' IDENTIFIED BY '$DB_ROOT_PASSWORD';
 GRANT ALL PRIVILEGES ON *.* TO 'admin'@'localhost' WITH GRANT OPTION;
 
 -- Secure the installation
@@ -74,11 +69,11 @@ Laravel User: $DB_USER
 Laravel Password: $DB_PASSWORD
 
 Admin User: admin
-Admin Password: $ROOT_PASSWORD
+Admin Password: $DB_ROOT_PASSWORD
 
 Connection Examples:
 mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME
-mysql -u admin -p$ROOT_PASSWORD
+mysql -u admin -p$DB_ROOT_PASSWORD
 EOF
 
     chmod 600 /home/$USER/mysql_credentials.txt

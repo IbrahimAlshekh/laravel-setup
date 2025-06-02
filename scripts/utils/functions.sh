@@ -28,6 +28,12 @@ print_header() {
     echo -e "${BLUE}================================${NC}"
 }
 
+print_information(){
+      echo -e "${GREEN}================================${NC}"
+      echo -e "${GREEN}$1${NC}"
+      echo -e "${GREEN}================================${NC}"
+}
+
 # Function to check if script is run as root
 check_not_root() {
     if [[ $EUID -eq 0 ]]; then

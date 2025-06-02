@@ -24,9 +24,23 @@ chmod 700 ~/.ssh
 ssh-keyscan -H github.com >> ~/.ssh/known_hosts
 
 print_warning "Please add your SSH public key to GitHub before proceeding"
-print_warning "If you haven't generated SSH keys yet, run: ssh-keygen -t ed25519 -C 'your-email@example.com'"
-print_warning "Then add the public key (~/.ssh/id_ed25519.pub) to your GitHub account"
-read -p "Press Enter when you've added your SSH key to GitHub..."
+read -p "Do you want to generate new ssh key? (y/n)" generate_ssh_key
+
+if [[ $generate_ssh_key == "y" || $generate_ssh_key == "Y" ]]; then
+  ssh-keygen -t ssh-keygen -t ed25519 -C "deployment@$DOMAIN"
+  print_status "SSH keygen is generated"
+fi
+
+print_warning "Add the public key (~/.ssh/id_ed25519.pub) to your GitHub account"
+
+read -p "Print the public key? (y/n)" print_public_key
+
+if [[ $print_public_key == "y" || $print_public_key == "Y"]]; then
+  information=$(cat ~/.ssh/id_ed25519.pub)
+  print_information $information
+fi
+
+read -p "Press Enter when you've added your SSH key to GitHub.."
 
 # Clone the repository
 print_header "Cloning Laravel Repository"
@@ -39,9 +53,6 @@ if [ -d "$WEB_ROOT" ]; then
 fi
 
 # Clone the repository
-print_status "Enter the Git repository URL for your Laravel project:"
-read -p "Repository URL: " REPO_URL
-
 if [ -z "$REPO_URL" ]; then
     print_error "Repository URL cannot be empty"
     exit 1

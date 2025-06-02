@@ -3,9 +3,14 @@
 # Configuration variables for Laravel server setup
 
 # Domain and application settings
-DOMAIN="example.com"
+print_status "Enter the Domain for your Laravel project:"
+read -p "Domain: " DOMAIN
+print_status "Enter the Git repository URL for your Laravel project:"
+read -p "Repository URL: " REPO_URL
 DB_NAME="production_db"
 DB_USER="db_user"
+DB_PASSWORD="$(openssl rand -base64 16)"
+DB_DB_ROOT_PASSWORD="$(openssl rand -base64 16)"
 WEB_USER="www-data"
 
 # Security settings
