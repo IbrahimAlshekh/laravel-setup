@@ -62,13 +62,13 @@ read -p "Press Enter to begin the setup process..."
 
 # Run each script in sequence
 run_script "system_update.sh"
-run_script "install_essentials.sh"
-run_script "install_php.sh"
-run_script "install_mysql.sh"
-run_script "install_nginx.sh"
-run_script "configure_security.sh"
-run_script "setup_laravel.sh"
-run_script "configure_services.sh"
+#run_script "install_essentials.sh"
+#run_script "install_php.sh"
+#run_script "install_mysql.sh"
+#run_script "install_nginx.sh"
+#run_script "configure_security.sh"
+#run_script "setup_laravel.sh"
+#run_script "configure_services.sh"
 
 # Final message
 print_header "Setup Complete!"
