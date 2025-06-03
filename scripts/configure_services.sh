@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Services configuration script for Laravel server setup
-
+load_scripts
 print_header "Configuring and Starting Services"
 
 # Enable and start Nginx

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Nginx installation and configuration script for Laravel server setup
-
+load_scripts
 print_header "Installing Nginx"
 print_status "Installing Nginx web server..."
 

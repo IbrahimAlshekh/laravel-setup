@@ -56,3 +56,14 @@ check_sudo_privileges() {
         exit 1
     fi
 }
+
+load_scripts()
+{
+  # Source utility functions and configuration
+  source "$(dirname "$0")/utils/functions.sh"
+  source "$(dirname "$0")/config.sh"
+
+  # Check if running as root and if user has sudo privileges
+  check_not_root
+  check_sudo_privileges
+}
