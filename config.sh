@@ -1,6 +1,16 @@
 #!/bin/bash
 
 # Configuration variables for Laravel server setup
+
+# Source utility functions and configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$SCRIPT_DIR/scripts/utils/functions.sh"
+
+# Check if running as root and if user has sudo privileges
+check_not_root
+check_sudo_privileges
+
 # Domain and application settings
 if [[ -z "$DOMAIN" ]]; then
   print_status "Enter the Domain for your Laravel project:"

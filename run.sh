@@ -8,6 +8,8 @@ set -e  # Exit on any error
 # Define script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+source "$SCRIPT_DIR/scripts/config.sh"
+
 # Print welcome message
 print_header "Laravel Production Server Setup"
 print_status "Setting up server for domain: $DOMAIN"
@@ -19,7 +21,6 @@ check_sudo_privileges
 
 # Function to run a script and check its exit status
 run_script() {
-    load_scripts
     local script_name="$1"
     local script_path="$SCRIPT_DIR/scripts/$script_name"
     
