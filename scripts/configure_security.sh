@@ -3,7 +3,6 @@
 # Security configuration script for Laravel server setup
 
 # Configure firewall
-load_scripts
 print_header "Configuring UFW Firewall"
 print_status "Setting up firewall rules..."
 

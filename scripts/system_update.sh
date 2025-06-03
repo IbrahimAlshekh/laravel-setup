@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # System update script for Laravel server setup
-load_scripts
 print_header "System Update"
 print_status "Updating system packages..."
 

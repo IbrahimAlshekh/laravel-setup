@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Essential packages installation script for Laravel server setup
-load_scripts
 print_header "Installing Essential Packages"
 print_status "Installing essential system packages..."
 

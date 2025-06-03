@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Laravel application setup script
-load_scripts
 print_header "Setting Up Laravel Application"
 
 # Configure Git and SSH for deployment
