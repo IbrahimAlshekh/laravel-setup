@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # MySQL installation and configuration script for Laravel server setup
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Installing MySQL 8.0"
 print_status "Installing MySQL server and client..."
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Services configuration script for Laravel server setup
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Configuring and Starting Services"
 
 # Enable and start Nginx

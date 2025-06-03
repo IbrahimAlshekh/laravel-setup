@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # Security configuration script for Laravel server setup
-
-# Configure firewall
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Configuring UFW Firewall"
 print_status "Setting up firewall rules..."
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Nginx installation and configuration script for Laravel server setup
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Installing Nginx"
 print_status "Installing Nginx web server..."
 

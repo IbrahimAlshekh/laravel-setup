@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Laravel application setup script
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Setting Up Laravel Application"
 
 # Configure Git and SSH for deployment
@@ -26,7 +27,7 @@ print_warning "Add the public key (~/.ssh/id_ed25519.pub) to your GitHub account
 
 read -p "Print the public key? (y/n)" print_public_key
 
-if [[ $print_public_key == "y" || $print_public_key == "Y"]]; then
+if [[ $print_public_key == "y" || $print_public_key == "Y" ]]; then
   information=$(cat ~/.ssh/id_ed25519.pub)
   print_information $information
 fi

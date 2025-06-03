@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # PHP installation script for Laravel server setup
+source "$(dirname "$0")/bootstrap.sh"
 print_header "Installing PHP 8.3 and Extensions"
 print_status "Adding PHP repository and installing PHP 8.3 with extensions..."
 

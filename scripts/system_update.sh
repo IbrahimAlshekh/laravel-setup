@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # System update script for Laravel server setup
+source "$(dirname "$0")/bootstrap.sh"
 print_header "System Update"
 print_status "Updating system packages..."
 
