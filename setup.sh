@@ -355,9 +355,10 @@ if [[ "$TLS_OK" == "true" ]]; then
     ln -sf "/etc/nginx/sites-available/${APP_NAME}" \
            "/etc/nginx/sites-enabled/${APP_NAME}"
 
-    # Ensure DH params exist (certbot usually creates them, but guard anyway)
-    if [[ ! -f /etc/letsencrypt/ssl-dhparams.pem ]]; then
-        openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048 2>/dev/null
+    # Generate DH params if absent. 2048-bit takes ~10 s; generate once and reuse.
+    if [[ ! -f /etc/nginx/ssl-dhparams.pem ]]; then
+        info "Generating DH params (2048-bit) — this may take ~10 seconds..."
+        openssl dhparam -out /etc/nginx/ssl-dhparams.pem 2048 2>/dev/null
     fi
 
     nginx -t || error "Nginx TLS config test failed"
