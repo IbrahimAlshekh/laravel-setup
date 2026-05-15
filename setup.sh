@@ -273,6 +273,9 @@ EOF
 ln -sf "/etc/nginx/sites-available/${APP_NAME}-http" \
        "/etc/nginx/sites-enabled/${APP_NAME}-http"
 rm -f /etc/nginx/sites-enabled/default
+# Remove old TLS site config from a previous run so nginx -t only tests
+# the HTTP-only config (the TLS config will be installed after certbot).
+rm -f "/etc/nginx/sites-enabled/${APP_NAME}"
 
 nginx -t || error "Nginx config test failed"
 systemctl enable --now nginx
