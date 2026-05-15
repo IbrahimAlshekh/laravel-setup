@@ -150,10 +150,15 @@ success "PHP ${PHP_VERSION}-FPM configured"
 section "Composer"
 if ! command -v composer &>/dev/null; then
     _tmpdir="$(mktemp -d)"
-    EXPECTED_SIG="$(php -r 'copy("https://composer.github.io/installer.sig","php://stdout");')"
-    php -r "copy('https://getcomposer.org/installer','${_tmpdir}/composer-setup.php');"
+    info "Downloading Composer installer..."
+    curl -fsSL --max-time 60 https://getcomposer.org/installer \
+        -o "${_tmpdir}/composer-setup.php" \
+        || error "Failed to download Composer installer (check network)"
+    EXPECTED_SIG="$(curl -fsSL --max-time 15 https://composer.github.io/installer.sig \
+        || error "Failed to fetch Composer signature (check network)")"
     ACTUAL_SIG="$(php -r "echo hash_file('sha384','${_tmpdir}/composer-setup.php');")"
-    [[ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]] && { rm -rf "$_tmpdir"; error "Composer installer signature mismatch — aborting"; }
+    [[ "$EXPECTED_SIG" == "$ACTUAL_SIG" ]] \
+        || { rm -rf "$_tmpdir"; error "Composer installer checksum mismatch — possible MITM"; }
     php "${_tmpdir}/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
     rm -rf "$_tmpdir"
 fi
