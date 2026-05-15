@@ -52,6 +52,11 @@ if ! getent passwd "${APP_USER}" &>/dev/null; then
         "${APP_USER}"
 fi
 usermod -aG www-data "${APP_USER}" 2>/dev/null || true
+
+# Grant the app user read access to its own secrets so deploy.sh (which
+# re-execs as APP_USER) can load them without root privileges.
+chown "root:${APP_USER}" "${SECRETS_FILE}"
+chmod 640 "${SECRETS_FILE}"
 success "User ${APP_USER} ready"
 
 # ── 2. System packages ────────────────────────────────────────────────────────

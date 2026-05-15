@@ -44,10 +44,12 @@ init_secrets() {
     chmod 700 "$dir"
 
     # Create file if absent; lock it down immediately.
+    # Mode 640 with group=APP_USER so deploy.sh (which re-execs as APP_USER)
+    # can read the credentials it needs without requiring root.
     if [[ ! -f "$SECRETS_FILE" ]]; then
         touch "$SECRETS_FILE"
-        chmod 600 "$SECRETS_FILE"
-        chown root:root "$SECRETS_FILE"
+        chown "root:${APP_USER:-root}" "$SECRETS_FILE"
+        chmod 640 "$SECRETS_FILE"
     fi
 
     # Load any already-generated secrets so secret_ensure can detect them.
