@@ -148,6 +148,13 @@ success "PHP ${PHP_VERSION}-FPM configured"
 
 # ── 4. Composer ───────────────────────────────────────────────────────────────
 section "Composer"
+# These env vars are required when running Composer as root:
+#   ALLOW_SUPERUSER skips the "don't run as root" warning and disables
+#   the update-check network call that causes hangs in restricted environments.
+export COMPOSER_ALLOW_SUPERUSER=1
+export COMPOSER_NO_INTERACTION=1
+export COMPOSER_HOME=/root/.composer
+
 if ! command -v composer &>/dev/null; then
     _tmpdir="$(mktemp -d)"
     info "Downloading Composer installer..."
@@ -162,7 +169,7 @@ if ! command -v composer &>/dev/null; then
     php "${_tmpdir}/composer-setup.php" --quiet --install-dir=/usr/local/bin --filename=composer
     rm -rf "$_tmpdir"
 fi
-success "Composer $(composer --version --no-ansi 2>&1 | head -1)"
+success "Composer ready at $(command -v composer)"
 
 # ── 5. Node.js & pnpm ────────────────────────────────────────────────────────
 section "Node.js ${NODE_VERSION} & pnpm"

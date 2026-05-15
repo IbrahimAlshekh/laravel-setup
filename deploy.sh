@@ -109,6 +109,9 @@ info "Deployed commit: $(git log -1 --oneline)"
 
 # ── 5. Composer ───────────────────────────────────────────────────────────────
 section "Composer install"
+export COMPOSER_ALLOW_SUPERUSER=1
+export COMPOSER_NO_INTERACTION=1
+export COMPOSER_HOME="${APP_DIR}/.composer-cache"
 composer install \
     --no-dev \
     --optimize-autoloader \
