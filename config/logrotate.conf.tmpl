@@ -1,0 +1,19 @@
+# =============================================================================
+# Logrotate config — rendered by setup.sh via envsubst
+# Variables: ${APP_DIR} ${APP_NAME} ${PHP_VERSION}
+# Placed at /etc/logrotate.d/${APP_NAME} by setup.sh
+# =============================================================================
+
+${APP_DIR}/storage/logs/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 664 ${APP_USER} www-data
+    sharedscripts
+    postrotate
+        /usr/lib/php/php${PHP_VERSION}-fpm-reopenlogs 2>/dev/null || true
+    endscript
+}

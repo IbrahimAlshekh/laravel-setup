@@ -1,0 +1,149 @@
+# =============================================================================
+# Nginx site config — rendered by setup.sh via envsubst
+# Variables: ${DOMAIN} ${APP_DIR} ${PHP_VERSION} ${APP_NAME}
+# =============================================================================
+
+# Rate-limit zones (defined in http context via nginx.conf include or here
+# when this file is used as a full server block — place this at http level
+# by including in /etc/nginx/conf.d/ or add directly to nginx.conf).
+# Nginx allows limit_req_zone only at http{} level; we embed a snippet file.
+# The actual limit_req directives are applied below in location blocks.
+
+# ── HTTP → HTTPS redirect ────────────────────────────────────────────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    # ACME challenge (certbot webroot)
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://${DOMAIN}$request_uri;
+    }
+}
+
+# ── www → non-www redirect ───────────────────────────────────────────────────
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name www.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    return 301 https://${DOMAIN}$request_uri;
+}
+
+# ── Main HTTPS site ──────────────────────────────────────────────────────────
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    root  ${APP_DIR}/public;
+    index index.php;
+
+    # ── SSL ───────────────────────────────────────────────────────────────────
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # ── Security headers ──────────────────────────────────────────────────────
+    add_header X-Frame-Options            "SAMEORIGIN"                                    always;
+    add_header X-Content-Type-Options     "nosniff"                                       always;
+    add_header X-XSS-Protection           "1; mode=block"                                 always;
+    add_header Referrer-Policy            "strict-origin-when-cross-origin"               always;
+    add_header Strict-Transport-Security  "max-age=63072000; includeSubDomains; preload"  always;
+    add_header Permissions-Policy         "camera=(), microphone=(), geolocation=()"      always;
+    add_header Content-Security-Policy    "upgrade-insecure-requests"                     always;
+
+    # ── Request limits ────────────────────────────────────────────────────────
+    client_max_body_size 20M;
+
+    # ── Gzip compression ──────────────────────────────────────────────────────
+    gzip            on;
+    gzip_vary       on;
+    gzip_proxied    any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain text/css text/xml text/javascript
+        application/json application/javascript application/xml+rss
+        application/atom+xml image/svg+xml;
+
+    # ── Logging ───────────────────────────────────────────────────────────────
+    access_log /var/log/nginx/${DOMAIN}.access.log;
+    error_log  /var/log/nginx/${DOMAIN}.error.log warn;
+
+    # ── Rate-limited auth endpoints (5 req/min per IP) ────────────────────────
+    location ~* ^/(login|admin/login|ar/login|en/login) {
+        limit_req zone=${APP_NAME}_login burst=10 nodelay;
+        limit_req_status 429;
+
+        try_files $uri $uri/ /index.php?$query_string;
+
+        location ~ \.php$ {
+            fastcgi_pass   unix:/run/php/php${PHP_VERSION}-fpm.sock;
+            fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+            include        fastcgi_params;
+            fastcgi_hide_header X-Powered-By;
+            fastcgi_read_timeout 300;
+        }
+    }
+
+    # ── Default route ─────────────────────────────────────────────────────────
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # ── Static assets ─────────────────────────────────────────────────────────
+    location ~* \.(js|css|woff|woff2|ttf|eot)$ {
+        expires    1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    location ~* \.(png|jpg|jpeg|gif|ico|svg|webp|avif)$ {
+        expires    30d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # ── PHP-FPM ───────────────────────────────────────────────────────────────
+    location ~ \.php$ {
+        fastcgi_pass   unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include        fastcgi_params;
+        fastcgi_hide_header X-Powered-By;
+        fastcgi_read_timeout 300;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # ── Block sensitive paths ─────────────────────────────────────────────────
+    location ~ /\.(?!well-known)              { deny all; }
+    location ~* \.(env|log|ini|bak|sql|sh)$  { deny all; }
+    location ~* /(?:vendor|node_modules)/    { deny all; }
+    location = /storage/logs                  { deny all; }
+
+    # ── PHP-FPM status (internal only) ───────────────────────────────────────
+    location = /fpm-status {
+        allow 127.0.0.1;
+        deny  all;
+        fastcgi_pass  unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include       fastcgi_params;
+    }
+
+    # ── Webhook listener proxy (only present when DEPLOY_ON_PUSH=true) ────────
+    # Injected by setup.sh when DEPLOY_ON_PUSH=true:
+    # include /etc/nginx/snippets/${APP_NAME}-webhook.conf;
+}

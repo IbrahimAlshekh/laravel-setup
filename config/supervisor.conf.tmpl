@@ -1,0 +1,43 @@
+; =============================================================================
+; Supervisor config — rendered by setup.sh via envsubst
+; Variables: ${APP_NAME} ${APP_USER} ${APP_DIR}
+; Placed at /etc/supervisor/conf.d/${APP_NAME}.conf
+; =============================================================================
+
+[program:${APP_NAME}-queue]
+process_name    = %(program_name)s_%(process_num)02d
+command         = php ${APP_DIR}/artisan queue:work redis \
+                      --sleep=3 \
+                      --tries=3 \
+                      --max-time=3600 \
+                      --timeout=90
+directory       = ${APP_DIR}
+autostart       = true
+autorestart     = true
+startsecs       = 1
+startretries    = 3
+stopasgroup     = true
+killasgroup     = true
+user            = ${APP_USER}
+numprocs        = 2
+redirect_stderr = true
+stdout_logfile              = ${APP_DIR}/storage/logs/queue.log
+stdout_logfile_maxbytes     = 10MB
+stdout_logfile_backups      = 5
+stopwaitsecs    = 3600
+
+[program:${APP_NAME}-scheduler]
+; Runs `schedule:work` which fires schedule:run every minute — no cron needed.
+process_name    = %(program_name)s
+command         = php ${APP_DIR}/artisan schedule:work
+directory       = ${APP_DIR}
+autostart       = true
+autorestart     = true
+user            = ${APP_USER}
+redirect_stderr         = true
+stdout_logfile          = ${APP_DIR}/storage/logs/scheduler.log
+stdout_logfile_maxbytes = 5MB
+stdout_logfile_backups  = 3
+
+[group:${APP_NAME}]
+programs = ${APP_NAME}-queue,${APP_NAME}-scheduler

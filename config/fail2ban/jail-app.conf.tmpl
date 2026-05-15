@@ -1,0 +1,47 @@
+# =============================================================================
+# Fail2ban jails — rendered by setup.sh via envsubst
+# Variables: ${APP_NAME} ${DOMAIN}
+# Placed at /etc/fail2ban/jail.d/${APP_NAME}.conf
+# =============================================================================
+
+# Laravel / Filament admin login brute-force
+[laravel-admin]
+enabled  = true
+port     = http,https
+filter   = ${APP_NAME}-admin
+logpath  = /var/log/nginx/${DOMAIN}.access.log
+           /var/log/nginx/access.log
+maxretry = 5
+findtime = 300
+bantime  = 3600
+
+# Nginx: block bots scanning for known exploits
+[nginx-botsearch]
+enabled  = true
+port     = http,https
+filter   = nginx-botsearch
+logpath  = /var/log/nginx/${DOMAIN}.access.log
+           /var/log/nginx/access.log
+maxretry = 2
+bantime  = 86400
+
+# Nginx: rate-limit violations (429 responses)
+[nginx-limit-req]
+enabled  = true
+port     = http,https
+filter   = nginx-limit-req
+logpath  = /var/log/nginx/${DOMAIN}.error.log
+           /var/log/nginx/error.log
+maxretry = 10
+findtime = 60
+bantime  = 7200
+
+# SSH brute-force
+[sshd]
+enabled  = true
+port     = ssh
+filter   = sshd
+logpath  = /var/log/auth.log
+maxretry = 4
+findtime = 300
+bantime  = 86400

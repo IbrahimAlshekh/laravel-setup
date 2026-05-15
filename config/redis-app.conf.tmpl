@@ -1,0 +1,37 @@
+# =============================================================================
+# Redis drop-in config — rendered by setup.sh via envsubst
+# Variables: ${REDIS_PASS}
+# Placed at /etc/redis/conf.d/10-app.conf  (or appended via include)
+# =============================================================================
+
+# Bind only to localhost — never expose Redis to the network.
+bind 127.0.0.1 -::1
+protected-mode yes
+port 6379
+
+# Authentication
+requirepass ${REDIS_PASS}
+
+# Memory management
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+
+# Persistence (AOF for safety, RDB as well)
+appendonly yes
+appendfilename "appendonly.aof"
+appendfsync everysec
+no-appendfsync-on-rewrite no
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
+
+# Disable dangerous commands to limit blast radius from a compromised app.
+rename-command FLUSHALL   ""
+rename-command FLUSHDB    ""
+rename-command CONFIG     ""
+rename-command DEBUG      ""
+rename-command SHUTDOWN   ""
+rename-command SLAVEOF    ""
+rename-command REPLICAOF  ""
+
+# Supervised by systemd
+supervised systemd
