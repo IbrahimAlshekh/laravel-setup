@@ -41,6 +41,22 @@ load_secrets
 # ── 2. System packages ────────────────────────────────────────────────────────
 section "System update & base packages"
 export DEBIAN_FRONTEND=noninteractive
+
+# Block apt post-install service auto-starts for the entire package-install
+# phase. On re-runs, apt-get upgrade may upgrade php-fpm while www.conf is
+# already disabled (no valid pool) — the automatic invoke-rc.d restart inside
+# the post-install hook then fails with exit code 78 (EX_CONFIG) and aborts
+# the entire apt-get command. We remove this file after all packages are
+# installed and start every service ourselves.
+_remove_policy_rc() { rm -f /usr/sbin/policy-rc.d; }
+cat > /usr/sbin/policy-rc.d <<'POLICY'
+#!/bin/sh
+exit 101
+POLICY
+chmod +x /usr/sbin/policy-rc.d
+# Safety net: always clean up on exit, even if the script fails mid-way.
+trap '_remove_policy_rc' EXIT
+
 apt-get update -qq
 apt-get upgrade -y -qq
 apt_install \
@@ -63,18 +79,6 @@ success "Unattended-upgrades configured"
 # ── 3. PHP ────────────────────────────────────────────────────────────────────
 section "PHP ${PHP_VERSION}"
 
-# Block apt's post-install service auto-start for PHP-FPM.
-# On a re-run, www.conf is already disabled (no valid pool), so the automatic
-# `invoke-rc.d php-fpm restart` inside the apt post-install script fails with
-# exit code 78 (EX_CONFIG) and aborts the entire apt-get install command.
-# We install, configure, then start the service ourselves below.
-cat > /usr/sbin/policy-rc.d <<'EOF'
-#!/bin/sh
-# Installed by laravel-setup/setup.sh — removed after PHP packages are installed.
-exit 101
-EOF
-chmod +x /usr/sbin/policy-rc.d
-
 if ! php -v 2>/dev/null | grep -q "PHP ${PHP_VERSION}"; then
     add-apt-repository -y ppa:ondrej/php
     apt-get update -qq
@@ -95,9 +99,6 @@ apt_install \
     "php${PHP_VERSION}-tokenizer" \
     "php${PHP_VERSION}-opcache" \
     "php${PHP_VERSION}-imagick"
-
-# PHP packages are installed — allow service starts again.
-rm -f /usr/sbin/policy-rc.d
 
 # OPcache production settings
 mkdir -p "/etc/php/${PHP_VERSION}/fpm/conf.d"
@@ -120,6 +121,10 @@ render_template \
 [[ -f "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf" ]] && \
     mv "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf" \
        "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.disabled"
+
+# All packages installed — remove the service-start block and clear the trap.
+_remove_policy_rc
+trap - EXIT
 
 systemctl enable "php${PHP_VERSION}-fpm"
 systemctl restart "php${PHP_VERSION}-fpm"
