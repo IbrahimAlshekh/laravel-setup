@@ -44,7 +44,7 @@ php_value[post_max_size]       = 20M
 php_value[max_execution_time]  = 300
 php_value[memory_limit]        = 256M
 
-; Sessions are managed by Laravel via Redis — no file-based sessions.
+; Sessions are managed by Laravel via Valkey — no file-based sessions.
 ; Environment variables are passed through from the system environment.
 clear_env = no
 

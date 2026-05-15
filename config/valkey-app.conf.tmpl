@@ -1,10 +1,10 @@
 # =============================================================================
-# Redis drop-in config — rendered by setup.sh via envsubst
+# Valkey app config — rendered by setup.sh via envsubst
 # Variables: ${REDIS_PASS}
-# Placed at /etc/redis/conf.d/10-app.conf  (or appended via include)
+# Placed at /etc/valkey/valkey-app.conf (included at end of valkey.conf)
 # =============================================================================
 
-# Bind only to localhost — never expose Redis to the network.
+# Bind only to localhost — never expose Valkey to the network.
 bind 127.0.0.1 -::1
 protected-mode yes
 port 6379
@@ -16,7 +16,7 @@ requirepass ${REDIS_PASS}
 maxmemory 256mb
 maxmemory-policy allkeys-lru
 
-# Persistence (AOF for safety, RDB as well)
+# Persistence (AOF for durability, RDB for fast restarts)
 appendonly yes
 appendfilename "appendonly.aof"
 appendfsync everysec

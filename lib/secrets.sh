@@ -58,7 +58,7 @@ init_secrets() {
     secret_ensure DB_ROOT_PASS _gen_secret
     # DB app user password
     secret_ensure DB_PASS      _gen_secret
-    # Redis password
+    # Valkey password (stored as REDIS_PASS — Laravel's config name is REDIS_*)
     secret_ensure REDIS_PASS   _gen_secret
     # Webhook HMAC secret (only used when DEPLOY_ON_PUSH=true)
     secret_ensure WEBHOOK_SECRET _gen_secret

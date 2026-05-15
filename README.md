@@ -10,7 +10,7 @@ A two-script toolkit that provisions a hardened Ubuntu server for Laravel and ke
 |-----------|---------|
 | **PHP** | Configurable version (default 8.4), FPM pool with dedicated system user, OPcache, `open_basedir`, dangerous functions disabled |
 | **MySQL 8** | Bound to localhost only, anonymous accounts removed, root password locked away in the secrets file |
-| **Redis** | Password-protected, bound to localhost only, dangerous commands (`FLUSHALL`, `CONFIG`, etc.) disabled |
+| **Valkey** | Password-protected, bound to localhost only, dangerous commands (`FLUSHALL`, `CONFIG`, etc.) disabled. Drop-in Redis replacement (same protocol — Laravel's `REDIS_*` config works unchanged) |
 | **Nginx** | TLS 1.2/1.3 via Let's Encrypt (auto-renewed), HSTS, security headers, rate-limiting on auth endpoints, hidden-file blocking |
 | **Supervisor** | Laravel queue workers (`queue:work redis`) + scheduler (`schedule:work`), both run as the app user |
 | **Fail2ban** | Laravel admin brute-force, Nginx bot scanner, rate-limit violations, SSH brute-force |
@@ -66,7 +66,7 @@ During setup you will be prompted once to add a deploy key to GitHub, then the s
 | `PHP_VERSION` | `8.4` | PHP version to install |
 | `DEPLOY_ON_PUSH` | `false` | `true` to enable GitHub webhook auto-deploy |
 
-Everything else (DB password, Redis password, `APP_KEY`, webhook secret) is **generated automatically** and never shown on screen. It is stored in:
+Everything else (DB password, Valkey password, `APP_KEY`, webhook secret) is **generated automatically** and never shown on screen. It is stored in:
 
 ```
 /etc/<app-name>/secrets.env   (mode 600, root only)
@@ -164,10 +164,10 @@ To view:
 sudo cat /etc/<app-name>/secrets.env
 ```
 
-To rotate a secret (e.g. Redis password):
+To rotate a secret (e.g. Valkey password):
 1. Edit the secrets file: `sudo nano /etc/<app-name>/secrets.env`
 2. Update `REDIS_PASS=<new-value>` in the file
-3. Re-render the Redis config: `sudo bash /opt/laravel-setup/setup.sh` (idempotent — only changes what differs)
+3. Re-render the Valkey config: `sudo bash /opt/laravel-setup/setup.sh` (idempotent — only changes what differs)
 4. Update `REDIS_PASSWORD=<new-value>` in `$APP_DIR/.env`
 5. `sudo bash /opt/laravel-setup/deploy.sh`
 
@@ -180,7 +180,7 @@ To rotate a secret (e.g. Redis password):
 - SSH key-only auth; root login restricted; weak ciphers disabled
 - UFW: only ports 22, 80, 443 open
 - MySQL: localhost-only, no anonymous accounts, no test database
-- Redis: localhost-only, password-required, dangerous commands disabled
+- Valkey: localhost-only, password-required, dangerous commands disabled
 - PHP-FPM: `open_basedir` restricts filesystem access; execution functions disabled
 - Nginx: HSTS, CSP upgrade, X-Frame-Options, nosniff, rate-limiting on login endpoints
 - Fail2ban: protects SSH, Nginx, and Laravel admin login
@@ -220,7 +220,7 @@ To rotate a secret (e.g. Redis password):
 
 ```bash
 # Check all relevant services
-systemctl status nginx php8.4-fpm mysql redis-server supervisor fail2ban ufw
+systemctl status nginx php8.4-fpm mysql valkey supervisor fail2ban ufw
 
 # Queue workers
 supervisorctl status
@@ -272,7 +272,7 @@ laravel-setup/
     ├── php-fpm-pool.conf.tmpl
     ├── opcache-prod.ini
     ├── supervisor.conf.tmpl
-    ├── redis-app.conf.tmpl
+    ├── valkey-app.conf.tmpl
     ├── sshd-hardening.conf
     ├── unattended-upgrades.conf
     ├── logrotate.conf.tmpl
