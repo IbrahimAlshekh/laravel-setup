@@ -242,8 +242,8 @@ if ! grep -q "^include ${VALKEY_APP_CONF}" "${VALKEY_MAIN}" 2>/dev/null; then
         "${VALKEY_APP_CONF}" >> "${VALKEY_MAIN}"
 fi
 
-systemctl enable --now valkey
-systemctl restart valkey
+systemctl enable --now valkey-server
+systemctl restart valkey-server
 success "Valkey configured with authentication"
 
 # ── 8. Nginx ──────────────────────────────────────────────────────────────────

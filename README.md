@@ -220,7 +220,7 @@ To rotate a secret (e.g. Valkey password):
 
 ```bash
 # Check all relevant services
-systemctl status nginx php8.4-fpm mysql valkey supervisor fail2ban ufw
+systemctl status nginx php8.4-fpm mysql valkey-server supervisor fail2ban ufw
 
 # Queue workers
 supervisorctl status
