@@ -86,10 +86,17 @@ apt_install() {
 
 # ── Render a .tmpl file via envsubst and install it ───────────────────────────
 # Usage: render_template src.tmpl /dest/path [mode] [owner]
+#
+# We pass an explicit variable list to envsubst so it only replaces deployment
+# placeholders and leaves Nginx's own $variables ($uri, $binary_remote_addr,
+# $request_uri, etc.) completely untouched.
+TMPL_VARS='${APP_NAME}${APP_USER}${APP_DIR}${DOMAIN}${PHP_VERSION}'\
+'${REDIS_PASS}${WEBHOOK_PATH}${WEBHOOK_SECRET}${REPO_BRANCH}${SCRIPT_DIR}'
+
 render_template() {
     local src="$1" dest="$2" mode="${3:-644}" owner="${4:-root:root}"
     [[ -f "$src" ]] || error "Template not found: $src"
-    envsubst < "$src" > "$dest"
+    envsubst "${TMPL_VARS}" < "$src" > "$dest"
     chmod "$mode" "$dest"
     chown "$owner" "$dest"
 }
