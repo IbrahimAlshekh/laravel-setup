@@ -252,6 +252,12 @@ if ! command -v nginx &>/dev/null; then
     apt_install nginx
 fi
 
+# Open ports 80 and 443 NOW so Nginx can serve and Let's Encrypt can reach the
+# ACME challenge. The full UFW policy (default deny, etc.) is applied later;
+# this just ensures the web ports are reachable regardless of UFW state.
+ufw allow 80/tcp  comment "HTTP"  2>/dev/null || true
+ufw allow 443/tcp comment "HTTPS" 2>/dev/null || true
+
 # Rate-limit zone (http context)
 export APP_NAME DOMAIN PHP_VERSION APP_DIR WEBHOOK_PATH
 render_template \
@@ -288,39 +294,78 @@ if ! command -v certbot &>/dev/null; then
     apt_install certbot python3-certbot-nginx
 fi
 
-if [[ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
-    certbot certonly \
-        --webroot \
-        -w /var/www/html \
-        -d "${DOMAIN}" \
-        -d "www.${DOMAIN}" \
-        --email "${CERTBOT_EMAIL}" \
-        --agree-tos \
-        --non-interactive
-    success "TLS certificate obtained"
-else
+TLS_OK=false
+if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
     success "TLS certificate already present"
+    TLS_OK=true
+else
+    # ── DNS pre-check ──────────────────────────────────────────────────────────
+    # Resolve this server's public IP and compare it to what the domain resolves
+    # to. If they don't match, certbot will time out — skip it and tell the user.
+    SERVER_IP="$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null \
+              || curl -fsSL --max-time 5 https://ifconfig.me 2>/dev/null \
+              || hostname -I | awk '{print $1}')"
+    DOMAIN_IP="$(host "${DOMAIN}" 2>/dev/null | awk '/has address/{print $4; exit}')"
+
+    if [[ -z "$DOMAIN_IP" ]]; then
+        warn "DNS pre-check: ${DOMAIN} has no A record yet."
+        warn "Point the domain to this server (${SERVER_IP}) and re-run setup.sh."
+        TLS_OK=false
+    elif [[ "$SERVER_IP" != "$DOMAIN_IP" ]]; then
+        warn "DNS pre-check: ${DOMAIN} → ${DOMAIN_IP}, but this server is ${SERVER_IP}."
+        warn "Update the A record and re-run setup.sh once DNS propagates."
+        TLS_OK=false
+    else
+        info "DNS check passed: ${DOMAIN} → ${SERVER_IP}"
+
+        # Only include www if it has its own DNS record.
+        CERTBOT_DOMAINS="-d ${DOMAIN}"
+        if host "www.${DOMAIN}" &>/dev/null 2>&1; then
+            CERTBOT_DOMAINS+=" -d www.${DOMAIN}"
+        else
+            warn "No DNS record for www.${DOMAIN} — cert will cover ${DOMAIN} only"
+        fi
+
+        if certbot certonly \
+                --webroot \
+                -w /var/www/html \
+                ${CERTBOT_DOMAINS} \
+                --email "${CERTBOT_EMAIL}" \
+                --agree-tos \
+                --non-interactive; then
+            success "TLS certificate obtained"
+            TLS_OK=true
+        else
+            warn "Certbot failed — continuing without TLS."
+            warn "Retry manually: certbot certonly --webroot -w /var/www/html -d ${DOMAIN}"
+            warn "Then re-run setup.sh to activate the HTTPS Nginx config."
+        fi
+    fi
 fi
 
-# Now install the full HTTPS config
-render_template \
-    "${SCRIPT_DIR}/config/nginx.conf.tmpl" \
-    "/etc/nginx/sites-available/${APP_NAME}" \
-    "644"
+if [[ "$TLS_OK" == "true" ]]; then
+    # Install the full HTTPS Nginx config
+    render_template \
+        "${SCRIPT_DIR}/config/nginx.conf.tmpl" \
+        "/etc/nginx/sites-available/${APP_NAME}" \
+        "644"
 
-rm -f "/etc/nginx/sites-enabled/${APP_NAME}-http" \
-      "/etc/nginx/sites-available/${APP_NAME}-http"
-ln -sf "/etc/nginx/sites-available/${APP_NAME}" \
-       "/etc/nginx/sites-enabled/${APP_NAME}"
+    rm -f "/etc/nginx/sites-enabled/${APP_NAME}-http" \
+          "/etc/nginx/sites-available/${APP_NAME}-http"
+    ln -sf "/etc/nginx/sites-available/${APP_NAME}" \
+           "/etc/nginx/sites-enabled/${APP_NAME}"
 
-# Ensure DH params exist (certbot usually creates them, but guard anyway)
-if [[ ! -f /etc/letsencrypt/ssl-dhparams.pem ]]; then
-    openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048 2>/dev/null
+    # Ensure DH params exist (certbot usually creates them, but guard anyway)
+    if [[ ! -f /etc/letsencrypt/ssl-dhparams.pem ]]; then
+        openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048 2>/dev/null
+    fi
+
+    nginx -t || error "Nginx TLS config test failed"
+    systemctl reload nginx
+    success "Nginx TLS site active"
+else
+    warn "Nginx running in HTTP-only mode — re-run setup.sh after TLS is ready."
 fi
-
-nginx -t || error "Nginx TLS config test failed"
-systemctl reload nginx
-success "Nginx TLS site active"
 
 # ── 10. Repository & deploy key ────────────────────────────────────────────────
 section "Deploy key & repository"
