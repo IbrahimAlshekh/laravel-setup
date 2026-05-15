@@ -62,6 +62,19 @@ success "Unattended-upgrades configured"
 
 # ── 3. PHP ────────────────────────────────────────────────────────────────────
 section "PHP ${PHP_VERSION}"
+
+# Block apt's post-install service auto-start for PHP-FPM.
+# On a re-run, www.conf is already disabled (no valid pool), so the automatic
+# `invoke-rc.d php-fpm restart` inside the apt post-install script fails with
+# exit code 78 (EX_CONFIG) and aborts the entire apt-get install command.
+# We install, configure, then start the service ourselves below.
+cat > /usr/sbin/policy-rc.d <<'EOF'
+#!/bin/sh
+# Installed by laravel-setup/setup.sh — removed after PHP packages are installed.
+exit 101
+EOF
+chmod +x /usr/sbin/policy-rc.d
+
 if ! php -v 2>/dev/null | grep -q "PHP ${PHP_VERSION}"; then
     add-apt-repository -y ppa:ondrej/php
     apt-get update -qq
@@ -83,6 +96,9 @@ apt_install \
     "php${PHP_VERSION}-opcache" \
     "php${PHP_VERSION}-imagick"
 
+# PHP packages are installed — allow service starts again.
+rm -f /usr/sbin/policy-rc.d
+
 # OPcache production settings
 mkdir -p "/etc/php/${PHP_VERSION}/fpm/conf.d"
 cp "${SCRIPT_DIR}/config/opcache-prod.ini" \
@@ -93,18 +109,19 @@ mkdir -p /var/log/php
 chown "www-data:adm" /var/log/php
 chmod 750 /var/log/php
 
-# Render and install the app's PHP-FPM pool
+# Pre-stage the app pool BEFORE starting the service so FPM always has a
+# valid pool on both first-run and re-run.
 export APP_NAME APP_USER APP_DIR PHP_VERSION
 render_template \
     "${SCRIPT_DIR}/config/php-fpm-pool.conf.tmpl" \
     "/etc/php/${PHP_VERSION}/fpm/pool.d/${APP_NAME}.conf"
 
-# Disable the default www pool to avoid resource leakage
+# Disable the default www pool now that the app pool is in place.
 [[ -f "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf" ]] && \
     mv "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf" \
        "/etc/php/${PHP_VERSION}/fpm/pool.d/www.conf.disabled"
 
-systemctl enable --now "php${PHP_VERSION}-fpm"
+systemctl enable "php${PHP_VERSION}-fpm"
 systemctl restart "php${PHP_VERSION}-fpm"
 success "PHP ${PHP_VERSION}-FPM configured"
 
