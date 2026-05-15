@@ -38,6 +38,22 @@ section "Secrets"
 init_secrets
 load_secrets
 
+# ── 1b. App user ───────────────────────────────────────────────────────────────
+# Created here — before PHP-FPM is started — because the pool config references
+# this user by name. FPM fails with EX_CONFIG if the user doesn't exist yet.
+section "App user — ${APP_USER}"
+if ! getent passwd "${APP_USER}" &>/dev/null; then
+    useradd \
+        --system \
+        --shell /bin/bash \
+        --home-dir "${APP_DIR}" \
+        --no-create-home \
+        --groups www-data \
+        "${APP_USER}"
+fi
+usermod -aG www-data "${APP_USER}" 2>/dev/null || true
+success "User ${APP_USER} ready"
+
 # ── 2. System packages ────────────────────────────────────────────────────────
 section "System update & base packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -290,22 +306,7 @@ nginx -t || error "Nginx TLS config test failed"
 systemctl reload nginx
 success "Nginx TLS site active"
 
-# ── 10. App user ───────────────────────────────────────────────────────────────
-section "App user — ${APP_USER}"
-if ! getent passwd "${APP_USER}" &>/dev/null; then
-    useradd \
-        --system \
-        --shell /bin/bash \
-        --home-dir "${APP_DIR}" \
-        --no-create-home \
-        --groups www-data \
-        "${APP_USER}"
-fi
-# Ensure APP_USER is in www-data
-usermod -aG www-data "${APP_USER}" 2>/dev/null || true
-success "User ${APP_USER} ready"
-
-# ── 11. Repository & deploy key ────────────────────────────────────────────────
+# ── 10. Repository & deploy key ────────────────────────────────────────────────
 section "Deploy key & repository"
 SSH_HOME="/home/${APP_USER}/.ssh"
 
