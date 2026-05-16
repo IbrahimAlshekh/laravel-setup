@@ -82,6 +82,17 @@
     prompt: "Press Enter once the deploy key has been added to GitHub"
 
 # ── Clone repository ──────────────────────────────────────────────────────────
+- name: Check if repository is already cloned
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/.git"
+  register: git_dir
+
+- name: Remove incomplete app directory before fresh clone
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: absent
+  when: not git_dir.stat.exists
+
 - name: Create app directory
   ansible.builtin.file:
     path: "{{ app_dir }}"
@@ -101,12 +112,12 @@
     repo: "{{ repo_url }}"
     dest: "{{ app_dir }}"
     version: "{{ repo_branch }}"
-    key_file: "{{ deploy_key_path }}"
-    ssh_opts: "-o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+    update: no
     accept_hostkey: no
   become_user: "{{ app_user }}"
   environment:
     GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+  when: not git_dir.stat.exists
 
 - name: Set repository ownership
   ansible.builtin.file:
