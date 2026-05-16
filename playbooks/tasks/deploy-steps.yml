@@ -1,0 +1,110 @@
+---
+# Shared deploy steps — imported by both provision.yml (initial) and deploy.yml.
+# Runs as root (become: yes set in the parent play).
+
+- name: Install Composer dependencies
+  ansible.builtin.command:
+    cmd: composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
+    chdir: "{{ app_dir }}"
+  environment:
+    COMPOSER_ALLOW_SUPERUSER: "1"
+    COMPOSER_NO_INTERACTION: "1"
+    COMPOSER_HOME: /root/.composer
+
+- name: Check for pnpm lockfile
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/pnpm-lock.yaml"
+  register: pnpm_lock
+
+- name: Check for npm lockfile
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/package-lock.json"
+  register: npm_lock
+
+- name: Build assets with pnpm
+  ansible.builtin.shell: |
+    pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+    pnpm run build
+  args:
+    chdir: "{{ app_dir }}"
+  when: pnpm_lock.stat.exists
+
+- name: Build assets with npm
+  ansible.builtin.shell: |
+    npm ci --omit=dev
+    npm run build
+  args:
+    chdir: "{{ app_dir }}"
+  when: npm_lock.stat.exists and not pnpm_lock.stat.exists
+
+- name: Generate application key (if not set)
+  ansible.builtin.shell: |
+    grep -q '^APP_KEY=.\+' .env || php artisan key:generate --force
+  args:
+    chdir: "{{ app_dir }}"
+
+- name: Clear old caches
+  ansible.builtin.command:
+    cmd: php artisan optimize:clear
+    chdir: "{{ app_dir }}"
+
+- name: Run database migrations
+  ansible.builtin.command:
+    cmd: php artisan migrate --force
+    chdir: "{{ app_dir }}"
+
+- name: Create storage symlink
+  ansible.builtin.command:
+    cmd: php artisan storage:link --force
+    chdir: "{{ app_dir }}"
+  failed_when: false
+
+- name: Set file ownership and permissions
+  block:
+    - name: Set ownership
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        owner: "{{ app_user }}"
+        group: www-data
+        recurse: yes
+
+    - name: Set directory permissions (755)
+      ansible.builtin.shell: |
+        find {{ app_dir }} -not -path '{{ app_dir }}/.git/*' -type d -exec chmod 755 {} \;
+
+    - name: Set file permissions (644)
+      ansible.builtin.shell: |
+        find {{ app_dir }} -not -path '{{ app_dir }}/.git/*' -type f -exec chmod 644 {} \;
+
+    - name: Set writable directories (775)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: '0775'
+        recurse: yes
+      loop:
+        - "{{ app_dir }}/storage"
+        - "{{ app_dir }}/bootstrap/cache"
+
+    - name: Protect .env (640)
+      ansible.builtin.file:
+        path: "{{ app_dir }}/.env"
+        mode: '0640'
+
+- name: Rebuild Laravel caches
+  ansible.builtin.command:
+    cmd: "php artisan {{ item }}"
+    chdir: "{{ app_dir }}"
+  loop:
+    - config:cache
+    - route:cache
+    - view:cache
+    - event:cache
+
+- name: Restart PHP-FPM (clears OPcache)
+  ansible.builtin.service:
+    name: "php{{ php_version }}-fpm"
+    state: restarted
+
+- name: Restart Supervisor workers
+  ansible.builtin.command: "supervisorctl restart {{ app_name }}:*"
+  failed_when: false

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "deploy-{{ app_name }}",
+    "execute-command": "/usr/local/bin/{{ app_name }}-deploy",
+    "command-working-directory": "{{ app_dir }}",
+    "response-message": "Deploying {{ app_name }}...",
+    "trigger-rule": {
+      "and": [
+        {
+          "match": {
+            "type": "payload-hmac-sha256",
+            "secret": "{{ webhook_secret }}",
+            "parameter": {
+              "source": "header",
+              "name": "X-Hub-Signature-256"
+            }
+          }
+        },
+        {
+          "match": {
+            "type": "value",
+            "value": "refs/heads/{{ repo_branch }}",
+            "parameter": {
+              "source": "payload",
+              "name": "ref"
+            }
+          }
+        }
+      ]
+    }
+  }
+]

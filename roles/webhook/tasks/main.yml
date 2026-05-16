@@ -1,0 +1,74 @@
+---
+- name: Install webhook package
+  ansible.builtin.apt:
+    name: webhook
+    state: present
+
+- name: Create webhook config directory
+  ansible.builtin.file:
+    path: /etc/webhook
+    state: directory
+    mode: '0755'
+
+- name: Deploy webhook hook config
+  ansible.builtin.template:
+    src: webhook-hooks.json.j2
+    dest: "/etc/webhook/{{ app_name }}-hooks.json"
+    owner: root
+    group: "{{ app_user }}"
+    mode: '0640'
+  no_log: true
+  notify: Restart webhook
+
+- name: Deploy deploy wrapper script
+  ansible.builtin.copy:
+    dest: "/usr/local/bin/{{ app_name }}-deploy"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      exec ansible-playbook /etc/{{ app_name }}/deploy.yml \
+        >> {{ app_dir }}/storage/logs/deploy.log 2>&1
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Deploy webhook systemd unit
+  ansible.builtin.template:
+    src: webhook.service.j2
+    dest: "/etc/systemd/system/webhook-{{ app_name }}.service"
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Restart webhook
+
+- name: Deploy webhook Nginx snippet
+  ansible.builtin.template:
+    src: "{{ role_path }}/../nginx/templates/nginx-webhook.conf.j2"
+    dest: "/etc/nginx/snippets/{{ app_name }}-webhook.conf"
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Create Nginx snippets directory
+  ansible.builtin.file:
+    path: /etc/nginx/snippets
+    state: directory
+    mode: '0755'
+
+- name: Enable and start webhook service
+  ansible.builtin.service:
+    name: "webhook-{{ app_name }}"
+    state: started
+    enabled: yes
+
+- name: Show webhook GitHub configuration
+  ansible.builtin.debug:
+    msg: |
+      ══════════════════════════════════════════════════════════════
+      Configure this webhook in your GitHub repository:
+        Settings → Webhooks → Add webhook
+
+        Payload URL  : https://{{ domain }}/__deploy/{{ webhook_path }}
+        Content type : application/json
+        Secret       : (see {{ secrets_file }})
+        Events       : Just the push event
+      ══════════════════════════════════════════════════════════════

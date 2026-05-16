@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# =============================================================================
+# {{ app_name }}-restore — Restore a backup snapshot
+# Deployed by Ansible. Variables are baked in; secrets sourced at runtime.
+#
+# Usage:
+#   sudo {{ app_name }}-restore --list
+#   sudo {{ app_name }}-restore --last
+#   sudo {{ app_name }}-restore --timestamp YYYYMMDD_HHMMSS
+# =============================================================================
+set -euo pipefail
+
+APP_NAME="{{ app_name }}"
+APP_DIR="{{ app_dir }}"
+APP_USER="{{ app_user }}"
+BACKUP_DIR="{{ backup_dir }}"
+PHP_VERSION="{{ php_version }}"
+SECRETS_FILE="{{ secrets_file }}"
+
+[[ $EUID -eq 0 ]] || { echo "Run as root: sudo $0" >&2; exit 1; }
+
+# Load secrets at runtime
+# shellcheck source=/dev/null
+source "${SECRETS_FILE}"
+
+MODE=""
+TIMESTAMP=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --last)      MODE="last" ;;
+        --list)      MODE="list" ;;
+        --timestamp) MODE="ts"; shift; TIMESTAMP="$1" ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+[[ -z "$MODE" ]] && { echo "Usage: $0 --last | --list | --timestamp YYYYMMDD_HHMMSS" >&2; exit 1; }
+
+list_snapshots() {
+    echo "Available snapshots in ${BACKUP_DIR}:"
+    ls -t "${BACKUP_DIR}"/git_*.ref 2>/dev/null | while read -r ref_file; do
+        ts="$(basename "$ref_file" .ref | sed 's/^git_//')"
+        commit="$(cat "$ref_file" 2>/dev/null || echo '?')"
+        db_file="$(ls "${BACKUP_DIR}/db_${ts}."* 2>/dev/null | head -1 || echo '—')"
+        printf "  %s  commit=%.8s  db=%s\n" "$ts" "$commit" "$(basename "$db_file")"
+    done
+}
+
+resolve_timestamp() {
+    if [[ "$MODE" == "last" ]]; then
+        TIMESTAMP="$(ls -t "${BACKUP_DIR}"/git_*.ref 2>/dev/null | head -1 | xargs basename 2>/dev/null | sed 's/^git_//;s/\.ref$//')"
+        [[ -n "$TIMESTAMP" ]] || { echo "No snapshots found in ${BACKUP_DIR}" >&2; exit 1; }
+    fi
+    [[ -f "${BACKUP_DIR}/git_${TIMESTAMP}.ref" ]] || { echo "Snapshot not found: ${TIMESTAMP}" >&2; exit 1; }
+}
+
+do_restore() {
+    echo "Restoring snapshot ${TIMESTAMP}..."
+
+    php "${APP_DIR}/artisan" down --render="errors::503" 2>/dev/null || true
+    trap 'php "${APP_DIR}/artisan" up 2>/dev/null || true' EXIT
+
+    target_commit="$(cat "${BACKUP_DIR}/git_${TIMESTAMP}.ref")"
+    echo "Checking out commit ${target_commit}"
+    sudo -u "${APP_USER}" git -C "${APP_DIR}" checkout "${target_commit}" -- .
+    echo "Code restored to ${target_commit}"
+
+    db_sql="${BACKUP_DIR}/db_${TIMESTAMP}.sql.gz"
+    db_sqlite="${BACKUP_DIR}/db_${TIMESTAMP}.sqlite.gz"
+    db_host="$(grep -E '^DB_HOST='     "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo '127.0.0.1')"
+    db_port="$(grep -E '^DB_PORT='     "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo '3306')"
+    db_name="$(grep -E '^DB_DATABASE=' "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo "${APP_NAME}")"
+    db_user="$(grep -E '^DB_USERNAME=' "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo "${APP_NAME}")"
+    db_pass="$(grep -E '^DB_PASSWORD=' "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo "${DB_PASS}")"
+
+    if [[ -f "$db_sql" ]]; then
+        echo "Restoring MySQL database..."
+        zcat "${db_sql}" | mysql -h"${db_host}" -P"${db_port}" -u"${db_user}" -p"${db_pass}" "${db_name}"
+        echo "Database restored"
+    elif [[ -f "$db_sqlite" ]]; then
+        sqlite_path="$(grep -E '^DB_DATABASE=' "${APP_DIR}/.env" | cut -d= -f2 | tr -d '"' || echo '')"
+        [[ "${sqlite_path}" != /* ]] && sqlite_path="${APP_DIR}/${sqlite_path}"
+        [[ -f "${sqlite_path}" ]] || sqlite_path="${APP_DIR}/database/database.sqlite"
+        echo "Restoring SQLite..."
+        zcat "${db_sqlite}" > "${sqlite_path}"
+        chown "${APP_USER}:www-data" "${sqlite_path}"
+        echo "SQLite restored"
+    else
+        echo "Warning: no DB backup found for ${TIMESTAMP}, skipping DB restore" >&2
+    fi
+
+    storage_backup="${BACKUP_DIR}/storage_${TIMESTAMP}.tar.gz"
+    if [[ -f "$storage_backup" ]]; then
+        echo "Restoring storage..."
+        tar -xzf "${storage_backup}" -C "${APP_DIR}"
+        chown -R "${APP_USER}:www-data" "${APP_DIR}/storage/app"
+        echo "Storage restored"
+    fi
+
+    sudo -u "${APP_USER}" php "${APP_DIR}/artisan" optimize:clear
+    sudo -u "${APP_USER}" php "${APP_DIR}/artisan" config:cache
+    sudo -u "${APP_USER}" php "${APP_DIR}/artisan" route:cache
+    sudo -u "${APP_USER}" php "${APP_DIR}/artisan" view:cache
+
+    systemctl restart "php${PHP_VERSION}-fpm" 2>/dev/null || true
+    supervisorctl restart "${APP_NAME}:*" 2>/dev/null || true
+
+    trap - EXIT
+    sudo -u "${APP_USER}" php "${APP_DIR}/artisan" up
+    echo "Restore complete — application is live at snapshot ${TIMESTAMP}"
+}
+
+if [[ "$MODE" == "list" ]]; then
+    list_snapshots
+else
+    resolve_timestamp
+    do_restore
+fi

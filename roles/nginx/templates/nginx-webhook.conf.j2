@@ -1,0 +1,10 @@
+# Webhook listener proxy — included in main server block when deploy_on_push=true.
+location = /__deploy/{{ webhook_path }} {
+    allow all;
+    proxy_pass         http://127.0.0.1:9000/hooks/deploy-{{ app_name }};
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Real-IP $remote_addr;
+    proxy_set_header   X-Hub-Signature-256 $http_x_hub_signature_256;
+    proxy_read_timeout 120s;
+    access_log /var/log/nginx/{{ domain }}.webhook.log;
+}

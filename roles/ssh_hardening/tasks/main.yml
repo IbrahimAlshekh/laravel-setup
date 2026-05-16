@@ -1,0 +1,11 @@
+---
+- name: Deploy SSH hardening config
+  ansible.builtin.copy:
+    src: sshd-hardening.conf
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    mode: '0600'
+  notify: Reload sshd
+
+- name: Test SSH config validity
+  ansible.builtin.command: sshd -t
+  changed_when: false

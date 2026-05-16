@@ -1,0 +1,85 @@
+---
+# =============================================================================
+# deploy.yml — Deploy the latest code to the server
+#
+# Usage:
+#   make deploy
+#   ansible-playbook playbooks/deploy.yml
+# =============================================================================
+- name: Deploy Laravel application
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Sanity checks
+      block:
+        - name: Check app directory is a git repo
+          ansible.builtin.stat:
+            path: "{{ app_dir }}/.git"
+          register: git_dir
+        - name: Fail if not a git repo
+          ansible.builtin.fail:
+            msg: "{{ app_dir }} is not a git repository. Run provision first."
+          when: not git_dir.stat.exists
+
+    - name: Create pre-deploy backup
+      ansible.builtin.command: "/usr/local/bin/{{ app_name }}-backup"
+      failed_when: false
+
+    - name: Put application in maintenance mode
+      ansible.builtin.command:
+        cmd: php artisan down --render=errors::503 --retry=60
+        chdir: "{{ app_dir }}"
+      failed_when: false
+
+    - name: Pull latest code
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ repo_branch }}"
+        key_file: "{{ deploy_key_path }}"
+        ssh_opts: "-o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+        force: yes
+      environment:
+        GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+
+    - name: Run deploy steps
+      block:
+        - ansible.builtin.import_tasks: tasks/deploy-steps.yml
+      rescue:
+        - name: Lift maintenance mode on failure
+          ansible.builtin.command:
+            cmd: php artisan up
+            chdir: "{{ app_dir }}"
+          failed_when: false
+        - name: Fail the playbook
+          ansible.builtin.fail:
+            msg: "Deployment failed. Application lifted from maintenance mode. Check logs at {{ deploy_log }}."
+
+    - name: Lift maintenance mode
+      ansible.builtin.command:
+        cmd: php artisan up
+        chdir: "{{ app_dir }}"
+
+    - name: Health check — PHP-FPM active
+      ansible.builtin.service_facts:
+    - ansible.builtin.assert:
+        that: "ansible_facts.services['php{{ php_version }}-fpm.service'].state == 'running'"
+        fail_msg: "PHP-FPM is not running after deploy!"
+
+    - name: Health check — HTTP /up endpoint
+      ansible.builtin.uri:
+        url: "https://{{ domain }}/up"
+        validate_certs: no
+        status_code: 200
+      retries: 6
+      delay: 5
+      register: health_result
+      until: health_result.status == 200
+
+    - name: Print deploy summary
+      ansible.builtin.debug:
+        msg: |
+          Deployment complete!
+            URL : https://{{ domain }}
+            Log : {{ deploy_log }}

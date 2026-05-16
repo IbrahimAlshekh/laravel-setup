@@ -1,0 +1,14 @@
+# =============================================================================
+# Fail2ban filter for {{ app_name }} admin brute-force
+# Managed by Ansible — do not edit manually.
+# =============================================================================
+[Definition]
+
+# Match POST requests to login endpoints returning 401, 403, or 422.
+# Matches Nginx combined log format.
+failregex = ^<HOST> .+ "POST /(admin/login|login|ar/login|en/login) HTTP/\d\.\d" (401|403|422) .+$
+            ^<HOST> .+ "POST /admin HTTP/\d\.\d" (401|403|422) .+$
+
+ignoreregex =
+
+datepattern = %%d/%%b/%%Y:%%H:%%M:%%S %%z

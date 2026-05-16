@@ -1,292 +1,207 @@
-# Laravel Production Server Setup
+# Laravel VPS Setup — Ansible
 
-A two-script toolkit that provisions a hardened Ubuntu server for Laravel and keeps it deployed. One script initialises the server; a second script deploys your application — manually or automatically on every git push.
+Ansible playbooks for deploying a Laravel application on a fresh Ubuntu 22.04 or 24.04 VPS. Idempotent — safe to re-run.
 
----
-
-## What it installs
+## What gets installed
 
 | Component | Details |
 |-----------|---------|
-| **PHP** | Configurable version (default 8.4), FPM pool with dedicated system user, OPcache, `open_basedir`, dangerous functions disabled |
-| **MySQL 8** | Bound to localhost only, anonymous accounts removed, root password locked away in the secrets file |
-| **Valkey** | Password-protected, bound to localhost only, dangerous commands (`FLUSHALL`, `CONFIG`, etc.) disabled. Drop-in Redis replacement (same protocol — Laravel's `REDIS_*` config works unchanged) |
-| **Nginx** | TLS 1.2/1.3 via Let's Encrypt (auto-renewed), HSTS, security headers, rate-limiting on auth endpoints, hidden-file blocking |
-| **Supervisor** | Laravel queue workers (`queue:work redis`) + scheduler (`schedule:work`), both run as the app user |
-| **Fail2ban** | Laravel admin brute-force, Nginx bot scanner, rate-limit violations, SSH brute-force |
-| **UFW** | Default deny; allows only SSH, HTTP, HTTPS |
-| **SSH hardening** | Password auth disabled, root login restricted, strong ciphers/MACs only |
-| **Unattended-upgrades** | Security patches applied automatically |
-| **Backups** | DB dump + storage tarball + git ref — before every deploy and daily at 02:30; 7-day rolling retention |
-| **Deploy-on-push** | Optional: GitHub webhook with HMAC verification; deploys on push to the configured branch |
-
----
+| PHP-FPM | Version configurable (default 8.4), OPcache production settings, dedicated pool |
+| Nginx | HTTPS with TLS 1.2/1.3, HSTS, security headers, rate-limiting on login endpoints |
+| MySQL 8 | App database + user, localhost-only binding, anonymous accounts removed |
+| Valkey | Redis-compatible, password-protected, dangerous commands disabled, localhost-only |
+| Supervisor | Queue workers (×2) + scheduler, auto-restart |
+| Fail2ban | Login brute-force, bot scanner, rate-limit violation, SSH brute-force jails |
+| UFW | Default deny, allows SSH / HTTP / HTTPS only |
+| Certbot | Let's Encrypt TLS certificate, auto-renew, DH params |
+| SSH hardening | Key-only auth, strong ciphers, root login restricted |
+| Unattended upgrades | Automatic security patches, auto-reboot for kernel updates |
+| Logrotate | Daily rotation of Laravel logs, 14-day retention |
+| Backup | Daily snapshots (DB + storage + git ref), configurable retention |
 
 ## Prerequisites
 
-- Fresh **Ubuntu 22.04 or 24.04** server
-- **Root access** (SSH as root, or a user with `sudo su`)
-- **DNS** pointing `example.com` and `www.example.com` to the server's IP
-- A **GitHub repository** containing your Laravel application
-
-> **Before running setup:** make sure you have at least one SSH public key authorised for the root user (or a sudoer). The script disables password authentication at the end — if you have no key set up, you will be locked out.
-
----
+- Fresh Ubuntu 22.04 or 24.04 VPS with root SSH access
+- Ansible 2.14+ on your local machine
+- Domain DNS A record pointing to the server IP (required for Let's Encrypt)
+- A private GitHub repository for your Laravel app
 
 ## Quickstart
 
+### 1. Install dependencies
+
 ```bash
-# 1. Clone this repo onto the server (as root)
-git clone https://github.com/IbrahimAlshekh/laravel-setup.git /opt/laravel-setup
-cd /opt/laravel-setup
-
-# 2. Fill in your 9 values
-cp .env.deploy.example .env.deploy
-nano .env.deploy          # see the comments in the file
-
-# 3. Run the one-time setup (~5–10 minutes)
-sudo bash setup.sh
+pip install ansible
+make deps   # installs community.mysql and community.general collections
 ```
 
-During setup you will be prompted once to add a deploy key to GitHub, then the script continues unattended.
+### 2. Configure your server
 
----
+Edit `inventory/hosts.yml`:
 
-## The 9 configuration values (`.env.deploy`)
-
-| Variable | Example | Description |
-|----------|---------|-------------|
-| `DOMAIN` | `example.com` | Your domain — no `www`, no protocol |
-| `CERTBOT_EMAIL` | `admin@example.com` | Let's Encrypt contact email |
-| `REPO_URL` | `git@github.com:org/repo.git` | SSH URL of your Laravel repository |
-| `REPO_BRANCH` | `main` | Branch to deploy |
-| `APP_DIR` | `/var/www/myapp` | Where the application lives on the server |
-| `BACKUP_DIR` | `/var/backups/myapp` | Where backups are stored |
-| `KEEP_BACKUPS` | `7` | How many daily backup sets to keep |
-| `PHP_VERSION` | `8.4` | PHP version to install |
-| `DEPLOY_ON_PUSH` | `false` | `true` to enable GitHub webhook auto-deploy |
-
-Everything else (DB password, Valkey password, `APP_KEY`, webhook secret) is **generated automatically** and never shown on screen. It is stored in:
-
-```
-/etc/<app-name>/secrets.env   (mode 600, root only)
+```yaml
+all:
+  hosts:
+    laravel_server:
+      ansible_host: YOUR_SERVER_IP
+      ansible_user: root
+      ansible_ssh_private_key_file: ~/.ssh/id_ed25519
 ```
 
----
+### 3. Set deployment variables
 
-## Day-2 deployments
+Edit `group_vars/all/vars.yml` and fill in your values:
 
-**Manual (default):**
+```yaml
+domain: "example.com"
+certbot_email: "admin@example.com"
+repo_url: "git@github.com:your-org/your-repo.git"
+repo_branch: "main"
+app_dir: "/var/www/myapp"
+backup_dir: "/var/backups/myapp"
+keep_backups: 7
+php_version: "8.4"
+deploy_on_push: false
+```
+
+### 4. Set secrets
+
+Generate strong random secrets:
+
 ```bash
-sudo bash /opt/laravel-setup/deploy.sh
+openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32
 ```
 
-**Automatic on push** (`DEPLOY_ON_PUSH=true`):
+Fill in `group_vars/all/vault.yml`, then encrypt it:
 
-After `setup.sh` completes, it prints:
-- The GitHub webhook URL to register
-- Where to find the HMAC secret
+```bash
+ansible-vault encrypt group_vars/all/vault.yml
+```
 
-In your GitHub repository: **Settings → Webhooks → Add webhook**
+Save the vault password to `.vault-pass` (already gitignored):
 
-| Field | Value |
-|-------|-------|
-| Payload URL | `https://example.com/__deploy/<random-path>` |
-| Content type | `application/json` |
-| Secret | *(from `/etc/<app>/secrets.env` → `WEBHOOK_SECRET`)* |
-| Which events | Just the push event |
+```bash
+echo "your-vault-password" > .vault-pass
+chmod 600 .vault-pass
+```
 
-Every push to `REPO_BRANCH` will automatically trigger a full deploy.
+### 5. Provision the server
 
-### What a deployment does
+```bash
+make provision
+```
 
-1. Creates a pre-deploy backup snapshot
-2. Puts the app into maintenance mode
-3. `git reset --hard origin/<branch>`
-4. `composer install --no-dev`
-5. `pnpm install && pnpm build` (or npm, if no pnpm lockfile)
-6. `php artisan migrate --force`
-7. `php artisan optimize:clear` → `config:cache route:cache view:cache event:cache`
-8. Fixes permissions on `storage/` and `bootstrap/cache/`
-9. Restarts PHP-FPM (full restart — required for OPcache) and Supervisor workers
-10. Lifts maintenance mode
-11. Runs a health check (`https://example.com/up`)
+This will:
+1. Install and configure the full stack (~5–10 min)
+2. **Pause and print a deploy public key** — add it to GitHub before continuing (Settings → Deploy Keys → Add deploy key, read-only)
+3. Clone your repository and run the initial deployment
+4. Print a summary with your live URL
 
-On failure: maintenance mode is lifted automatically; a rollback can be triggered with `AUTO_ROLLBACK=true`.
+## Day-to-day operations
 
----
+| Task | Command |
+|------|---------|
+| Deploy latest code | `make deploy` |
+| Trigger a backup | `make backup` |
+| Restore last backup | `make restore` |
+| Restore specific snapshot | `make restore TIMESTAMP=20240115_023001` |
+
+### On the server directly
+
+```bash
+# List available backup snapshots
+sudo myapp-restore --list
+
+# Restore most recent snapshot
+sudo myapp-restore --last
+
+# Restore a specific snapshot
+sudo myapp-restore --timestamp 20240115_023001
+
+# Run a manual backup
+sudo myapp-backup
+```
+
+(`myapp` is replaced with your `app_name`, which defaults to the basename of `app_dir`.)
+
+## Deploy-on-push (optional)
+
+Set `deploy_on_push: true` in `vars.yml` and re-run `make provision`. After provisioning, the output will display a webhook URL and instructions to configure it in GitHub (Settings → Webhooks).
+
+## Project structure
+
+```
+├── ansible.cfg                  # Ansible configuration
+├── Makefile                     # Convenience targets (provision, deploy, backup, restore)
+├── requirements.yml             # Galaxy collection dependencies
+├── inventory/
+│   └── hosts.yml                # Server inventory
+├── group_vars/all/
+│   ├── vars.yml                 # Non-secret configuration
+│   └── vault.yml                # Encrypted secrets (ansible-vault)
+├── playbooks/
+│   ├── provision.yml            # Full server setup (run once)
+│   ├── deploy.yml               # Deploy latest code
+│   ├── backup.yml               # Trigger backup
+│   ├── restore.yml              # Restore snapshot
+│   └── tasks/
+│       └── deploy-steps.yml     # Shared deploy steps (used by provision + deploy)
+└── roles/
+    ├── common/                  # Base packages, unattended-upgrades
+    ├── php/                     # PHP-FPM, OPcache, app pool
+    ├── composer/                # Composer installation
+    ├── nodejs/                  # Node.js + pnpm
+    ├── mysql/                   # MySQL, database, user, hardening
+    ├── valkey/                  # Valkey (Redis-compatible) config
+    ├── nginx/                   # Nginx, HTTPS config, rate-limiting
+    ├── certbot/                 # Let's Encrypt certificate
+    ├── ufw/                     # Firewall rules
+    ├── ssh_hardening/           # SSH hardening
+    ├── fail2ban/                # Brute-force protection
+    ├── supervisor/              # Queue workers + scheduler
+    ├── logrotate/               # Log rotation
+    ├── laravel_app/             # App user, deploy key, repo, .env, backup/restore scripts
+    └── webhook/                 # Deploy-on-push webhook listener
+```
+
+## Secrets management
+
+Secrets (database passwords, Redis password, webhook HMAC key) live exclusively in `group_vars/all/vault.yml`, encrypted with `ansible-vault` and never committed in plain text. On the server they are written to `/etc/<app_name>/secrets.env` (mode 640, root:app_user only).
+
+To rotate a secret: update `vault.yml`, re-encrypt, and run `make provision` (idempotent).
 
 ## Backups
 
-Backups run in two situations:
+Daily snapshots run at 02:30 AM via cron. Each snapshot contains:
+- Compressed MySQL dump (`.sql.gz`)
+- Storage tarball (`storage/app` only, excludes logs/framework)
+- Git commit reference for code rollback
 
-1. **Before every deploy** — a snapshot is always created first
-2. **Daily at 02:30** — via `/etc/cron.d/<app>-backup`
+`keep_backups` (default: 7) controls how many sets are retained. A pre-deploy backup is also taken automatically before each `make deploy`.
 
-Each snapshot contains:
-- `db_YYYYMMDD_HHMMSS.sql.gz` — MySQL dump (or SQLite copy)
-- `storage_YYYYMMDD_HHMMSS.tar.gz` — uploaded files
-- `git_YYYYMMDD_HHMMSS.ref` — the deployed git SHA (for code rollback)
+## Running individual roles
 
-Snapshots are stored in `BACKUP_DIR` (mode 700, root only) and rotated to keep the last `KEEP_BACKUPS` sets of each type.
-
----
-
-## Rollback
-
-List available snapshots:
 ```bash
-sudo bash /opt/laravel-setup/lib/restore.sh --list
+# Only (re-)configure PHP-FPM
+ansible-playbook playbooks/provision.yml --tags php
+
+# Only update Nginx config
+ansible-playbook playbooks/provision.yml --tags nginx
+
+# Only update fail2ban rules
+ansible-playbook playbooks/provision.yml --tags fail2ban
 ```
 
-Restore the most recent snapshot:
-```bash
-sudo bash /opt/laravel-setup/lib/restore.sh --last
-```
-
-Restore a specific snapshot:
-```bash
-sudo bash /opt/laravel-setup/lib/restore.sh --timestamp 20240115_023001
-```
-
-Restore puts the app into maintenance mode, restores the DB dump, re-extracts the storage archive, checks out the saved git ref, rebuilds caches, restarts services, and lifts maintenance mode.
-
-> **Note:** restoring a DB dump is the correct rollback for schema migrations. The restore script does not run `migrate:rollback` — it replaces the database entirely with the dump taken before the failed deploy.
-
----
-
-## Secrets
-
-All generated secrets are stored in `/etc/<app-name>/secrets.env` (mode 600, readable only by root).
-
-To view:
-```bash
-sudo cat /etc/<app-name>/secrets.env
-```
-
-To rotate a secret (e.g. Valkey password):
-1. Edit the secrets file: `sudo nano /etc/<app-name>/secrets.env`
-2. Update `REDIS_PASS=<new-value>` in the file
-3. Re-render the Valkey config: `sudo bash /opt/laravel-setup/setup.sh` (idempotent — only changes what differs)
-4. Update `REDIS_PASSWORD=<new-value>` in `$APP_DIR/.env`
-5. `sudo bash /opt/laravel-setup/deploy.sh`
-
----
+Available tags: `common`, `php`, `composer`, `nodejs`, `mysql`, `valkey`, `nginx`, `certbot`/`tls`, `app`, `supervisor`, `fail2ban`, `ufw`, `ssh`, `logrotate`, `webhook`.
 
 ## Security posture
 
-### What is hardened
-
-- SSH key-only auth; root login restricted; weak ciphers disabled
-- UFW: only ports 22, 80, 443 open
-- MySQL: localhost-only, no anonymous accounts, no test database
+- SSH: key-only auth, password auth disabled, root login restricted, strong ciphers only
+- Firewall: UFW default deny — only ports 22, 80, 443 open
+- MySQL: localhost-only, no anonymous accounts, no remote root
 - Valkey: localhost-only, password-required, dangerous commands disabled
-- PHP-FPM: `open_basedir` restricts filesystem access; execution functions disabled
-- Nginx: HSTS, CSP upgrade, X-Frame-Options, nosniff, rate-limiting on login endpoints
-- Fail2ban: protects SSH, Nginx, and Laravel admin login
-- Unattended-upgrades: OS security patches applied automatically
-- All generated passwords: 32-char cryptographically random strings
-- Secrets file: mode 600, root-only — never echoed to stdout
-- Deploy user owns the code; the FPM pool can only read it (except `storage/` and `bootstrap/cache/`)
-
-### What is not included (consider adding for high-security environments)
-
-- **WAF** (ModSecurity, Cloudflare) — not installed
-- **IDS/IPS** (Suricata, Snort) — not installed
-- **Offsite backup** (S3, Backblaze) — backups are local only; copy them offsite
-- **Log aggregation** (Loki, Datadog) — logs are on-disk only
-- **SELinux/AppArmor profiles** — not configured
-- **2FA for SSH** — not configured
-
----
-
-## Troubleshooting
-
-### Where are the logs?
-
-| What | Path |
-|------|------|
-| Deploy log | `$APP_DIR/storage/logs/deploy.log` |
-| Laravel app log | `$APP_DIR/storage/logs/laravel.log` |
-| Queue workers | `$APP_DIR/storage/logs/queue.log` |
-| Scheduler | `$APP_DIR/storage/logs/scheduler.log` |
-| Nginx access | `/var/log/nginx/<domain>.access.log` |
-| Nginx error | `/var/log/nginx/<domain>.error.log` |
-| PHP-FPM error | `/var/log/php/<app>-fpm-error.log` |
-| PHP-FPM slow | `/var/log/php/<app>-slow.log` |
-| Daily backup | `/var/log/<app>-backup.log` |
-
-### Services
-
-```bash
-# Check all relevant services
-systemctl status nginx php8.4-fpm mysql valkey-server supervisor fail2ban ufw
-
-# Queue workers
-supervisorctl status
-
-# Fail2ban bans
-fail2ban-client status
-fail2ban-client status sshd
-```
-
-### Re-running setup safely
-
-`setup.sh` is idempotent. Re-running it on an already-configured server will:
-- Skip package installation if already installed
-- Preserve existing secrets (never regenerates)
-- Skip repository clone if `APP_DIR/.git` exists
-- Skip `.env` creation if it already exists
-- Update config files and reload services
-
-To re-provision from scratch, back up `$APP_DIR/.env` and `/etc/<app>/secrets.env`, then restore them after running setup.sh fresh.
-
-### Disabling the webhook
-
-```bash
-sudo systemctl disable --now webhook-<app>
-sudo rm /etc/nginx/snippets/<app>-webhook.conf
-# Edit /etc/nginx/sites-available/<app> to remove the include line
-sudo nginx -t && sudo systemctl reload nginx
-```
-
----
-
-## Directory structure
-
-```
-laravel-setup/
-├── setup.sh                    # One-time server provisioning
-├── deploy.sh                   # Repeatable deployment
-├── .env.deploy.example         # Configuration template (copy → .env.deploy)
-├── lib/
-│   ├── common.sh               # Shared helpers, env loader
-│   ├── secrets.sh              # Secret generation and storage
-│   ├── backup.sh               # Backup (called by deploy + cron)
-│   ├── restore.sh              # Restore a backup snapshot
-│   └── healthcheck.sh          # Post-deploy health verification
-└── config/
-    ├── nginx.conf.tmpl
-    ├── nginx-rate-limit.conf.tmpl
-    ├── nginx-webhook.conf.tmpl
-    ├── php-fpm-pool.conf.tmpl
-    ├── opcache-prod.ini
-    ├── supervisor.conf.tmpl
-    ├── valkey-app.conf.tmpl
-    ├── sshd-hardening.conf
-    ├── unattended-upgrades.conf
-    ├── logrotate.conf.tmpl
-    ├── sudoers-deploy.tmpl
-    ├── backup.cron.tmpl
-    ├── webhook.hook.json.tmpl
-    ├── webhook.service.tmpl
-    └── fail2ban/
-        ├── jail-app.conf.tmpl
-        └── filter-app.conf.tmpl
-```
-
----
-
-## License
-
-MIT
+- PHP-FPM: `open_basedir` restriction, dangerous functions disabled
+- Nginx: HSTS, CSP, X-Frame-Options, rate-limiting on auth endpoints (5 req/min)
+- Fail2ban: login brute-force, bot scanner, rate-limit violation, SSH brute-force jails
+- Unattended-upgrades: automatic security patches with auto-reboot for kernel updates
+- Secrets: ansible-vault encrypted at rest; mode 640 on server

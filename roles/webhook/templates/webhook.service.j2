@@ -1,0 +1,19 @@
+[Unit]
+Description=Webhook listener for {{ app_name }} deploy
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/webhook \
+    -hooks /etc/webhook/{{ app_name }}-hooks.json \
+    -ip 127.0.0.1 \
+    -port 9000 \
+    -verbose
+Restart=on-failure
+RestartSec=5
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

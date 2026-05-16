@@ -1,0 +1,14 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Restart webhook
+  ansible.builtin.service:
+    name: "webhook-{{ app_name }}"
+    state: restarted
+
+- name: Reload nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded

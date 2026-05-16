@@ -1,0 +1,13 @@
+{{ app_dir }}/storage/logs/*.log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 664 {{ app_user }} www-data
+    sharedscripts
+    postrotate
+        /usr/lib/php/php{{ php_version }}-fpm-reopenlogs 2>/dev/null || true
+    endscript
+}

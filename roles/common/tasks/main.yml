@@ -1,0 +1,46 @@
+---
+- name: Set DEBIAN_FRONTEND to noninteractive
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'DEBIAN_FRONTEND=noninteractive'
+    create: yes
+
+- name: Update apt cache and upgrade packages
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: dist
+    cache_valid_time: 3600
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - wget
+      - git
+      - unzip
+      - zip
+      - gnupg2
+      - ca-certificates
+      - lsb-release
+      - software-properties-common
+      - apt-transport-https
+      - gettext-base
+      - ufw
+      - fail2ban
+      - logrotate
+      - cron
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+
+- name: Deploy unattended-upgrades config
+  ansible.builtin.copy:
+    src: 50unattended-upgrades.conf
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    mode: '0644'
+
+- name: Deploy apt periodic config
+  ansible.builtin.copy:
+    src: 20auto-upgrades.conf
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: '0644'

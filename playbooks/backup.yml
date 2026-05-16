@@ -1,0 +1,20 @@
+---
+# =============================================================================
+# backup.yml — Trigger a backup snapshot on the server
+#
+# Usage:
+#   make backup
+#   ansible-playbook playbooks/backup.yml
+# =============================================================================
+- name: Backup Laravel application
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Run backup script
+      ansible.builtin.command: "/usr/local/bin/{{ app_name }}-backup"
+      register: backup_output
+
+    - name: Show backup output
+      ansible.builtin.debug:
+        msg: "{{ backup_output.stdout_lines }}"

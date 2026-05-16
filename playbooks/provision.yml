@@ -1,0 +1,94 @@
+---
+# =============================================================================
+# provision.yml — Full one-time server provisioning
+#
+# Usage:
+#   ansible-playbook playbooks/provision.yml           (all steps)
+#   ansible-playbook playbooks/provision.yml --tags php  (single role)
+#
+# Run: make provision
+# =============================================================================
+- name: Provision Laravel server
+  hosts: all
+  become: yes
+
+  pre_tasks:
+    - name: Verify target is Ubuntu 22.04 or 24.04
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == "Ubuntu"
+          - ansible_facts['distribution_major_version'] | int >= 22
+        fail_msg: "This playbook requires Ubuntu 22.04 or 24.04."
+
+  roles:
+    - role: common
+      tags: common
+
+    - role: php
+      tags: php
+
+    - role: composer
+      tags: composer
+
+    - role: nodejs
+      tags: nodejs
+
+    - role: mysql
+      tags: mysql
+
+    - role: valkey
+      tags: valkey
+
+    - role: nginx
+      tags: nginx
+
+    - role: certbot
+      tags: certbot, tls
+
+    - role: laravel_app
+      tags: app
+
+    - role: supervisor
+      tags: supervisor
+
+    - role: fail2ban
+      tags: fail2ban
+
+    - role: ufw
+      tags: ufw
+
+    - role: ssh_hardening
+      tags: ssh
+
+    - role: logrotate
+      tags: logrotate
+
+    - role: webhook
+      tags: webhook
+      when: deploy_on_push | bool
+
+  post_tasks:
+    - name: Run initial deployment
+      ansible.builtin.import_tasks: ../playbooks/tasks/deploy-steps.yml
+      tags: deploy
+
+    - name: Print provisioning summary
+      ansible.builtin.debug:
+        msg: |
+          ══════════════════════════════════════════════════════════════
+          Provisioning complete!
+
+            URL      : https://{{ domain }}
+            App dir  : {{ app_dir }}
+            App user : {{ app_user }}
+            Secrets  : {{ secrets_file }}
+            Backups  : {{ backup_dir }} (daily 02:30, keep {{ keep_backups }})
+
+          Day-2 operations:
+            Deploy   : make deploy
+            Backup   : make backup
+            Restore  : make restore                      (last snapshot)
+                       make restore TIMESTAMP=YYYYMMDD_HHMMSS
+            On server: sudo {{ app_name }}-restore --list
+          ══════════════════════════════════════════════════════════════
+      tags: always

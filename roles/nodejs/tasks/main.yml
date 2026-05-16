@@ -1,0 +1,23 @@
+---
+- name: Check current Node.js version
+  ansible.builtin.command: node --version
+  register: node_current_version
+  failed_when: false
+  changed_when: false
+
+- name: Install Node.js {{ node_version }} from NodeSource
+  ansible.builtin.shell: |
+    curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash -
+    apt-get install -y nodejs
+  when: node_current_version.rc != 0 or ('v' + node_version) not in node_current_version.stdout
+
+- name: Enable corepack
+  ansible.builtin.shell: |
+    npm install -g corepack 2>/dev/null || true
+    corepack enable
+  changed_when: false
+
+- name: Activate pnpm via corepack
+  ansible.builtin.shell: corepack prepare pnpm@latest --activate
+  changed_when: false
+  failed_when: false

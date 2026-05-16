@@ -1,0 +1,3 @@
+# Rate-limit zone for {{ app_name }} login endpoints.
+# Placed at /etc/nginx/conf.d/ (http{} context).
+limit_req_zone $binary_remote_addr zone={{ app_name }}_login:10m rate=5r/m;

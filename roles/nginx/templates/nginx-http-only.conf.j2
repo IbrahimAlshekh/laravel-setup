@@ -1,0 +1,16 @@
+# Temporary HTTP-only config — active until TLS certificate is obtained.
+# Replaced by nginx.conf.j2 after certbot succeeds.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ domain }} www.{{ domain }};
+    root /var/www/html;
+
+    location ^~ /.well-known/acme-challenge/ {
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://{{ domain }}$request_uri;
+    }
+}

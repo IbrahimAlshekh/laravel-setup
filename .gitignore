@@ -1,0 +1,15 @@
+# Local deploy config (never commit — contains your server details)
+.env.deploy
+.env
+
+# Ansible vault password file
+.vault-pass
+
+# Ansible fact cache
+/tmp/ansible_facts_cache/
+
+# Ansible retry files
+*.retry
+
+# macOS
+.DS_Store

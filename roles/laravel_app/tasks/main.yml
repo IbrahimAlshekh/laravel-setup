@@ -1,0 +1,174 @@
+---
+# ── Secrets directory ─────────────────────────────────────────────────────────
+- name: Create secrets directory
+  ansible.builtin.file:
+    path: "/etc/{{ app_name }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Write secrets file
+  ansible.builtin.copy:
+    dest: "{{ secrets_file }}"
+    content: |
+      DB_ROOT_PASS={{ db_root_pass }}
+      DB_PASS={{ db_pass }}
+      REDIS_PASS={{ redis_pass }}
+      WEBHOOK_SECRET={{ webhook_secret }}
+      WEBHOOK_PATH={{ webhook_path }}
+    owner: root
+    group: "{{ app_user }}"
+    mode: '0640'
+  no_log: true
+
+# ── App system user ───────────────────────────────────────────────────────────
+- name: Create app system user
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: yes
+    shell: /bin/bash
+    home: "{{ app_dir }}"
+    create_home: no
+    groups: www-data
+    append: yes
+
+# ── Deploy key ────────────────────────────────────────────────────────────────
+- name: Create SSH key directory
+  ansible.builtin.file:
+    path: "{{ ssh_key_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Generate Ed25519 deploy key
+  community.crypto.openssh_keypair:
+    path: "{{ deploy_key_path }}"
+    type: ed25519
+    comment: "deploy@{{ domain }}"
+    owner: "{{ app_user }}"
+    mode: '0600'
+  register: deploy_keypair
+
+- name: Write SSH client config
+  ansible.builtin.copy:
+    dest: "{{ ssh_key_dir }}/config"
+    content: |
+      Host github.com
+          IdentityFile {{ deploy_key_path }}
+          UserKnownHostsFile {{ ssh_key_dir }}/known_hosts
+    owner: "{{ app_user }}"
+    mode: '0600'
+
+- name: Trust GitHub host key (TOFU)
+  ansible.builtin.shell: |
+    ssh-keyscan github.com >> {{ ssh_key_dir }}/known_hosts 2>/dev/null
+    chown {{ app_user }} {{ ssh_key_dir }}/known_hosts
+  args:
+    creates: "{{ ssh_key_dir }}/known_hosts"
+
+- name: Display deploy public key
+  ansible.builtin.debug:
+    msg: |
+      ══════════════════════════════════════════════════════════════
+      Add this deploy key to your GitHub repository:
+        Settings → Deploy Keys → Add deploy key (read-only)
+
+      {{ deploy_keypair.public_key }}
+      ══════════════════════════════════════════════════════════════
+
+- name: Wait for deploy key to be added to GitHub
+  ansible.builtin.pause:
+    prompt: "Press Enter once the deploy key has been added to GitHub"
+
+# ── Clone repository ──────────────────────────────────────────────────────────
+- name: Create app directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: www-data
+    mode: '0755'
+
+- name: Mark app directory as safe for git
+  community.general.git_config:
+    name: safe.directory
+    value: "{{ app_dir }}"
+    scope: global
+
+- name: Clone repository
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_dir }}"
+    version: "{{ repo_branch }}"
+    key_file: "{{ deploy_key_path }}"
+    ssh_opts: "-o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+    accept_hostkey: no
+  become_user: "{{ app_user }}"
+  environment:
+    GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+
+- name: Set repository ownership
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    owner: "{{ app_user }}"
+    group: www-data
+    recurse: yes
+
+# ── Laravel .env ──────────────────────────────────────────────────────────────
+- name: Create Laravel .env (skip if already exists)
+  ansible.builtin.template:
+    src: laravel-env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ app_user }}"
+    group: www-data
+    mode: '0640'
+    force: no
+  no_log: true
+
+# ── Storage and cache directories ─────────────────────────────────────────────
+- name: Ensure storage and bootstrap/cache directories exist with correct permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: www-data
+    mode: '0775'
+  loop:
+    - "{{ app_dir }}/storage"
+    - "{{ app_dir }}/storage/app"
+    - "{{ app_dir }}/storage/app/public"
+    - "{{ app_dir }}/storage/framework"
+    - "{{ app_dir }}/storage/framework/cache"
+    - "{{ app_dir }}/storage/framework/sessions"
+    - "{{ app_dir }}/storage/framework/views"
+    - "{{ app_dir }}/storage/logs"
+    - "{{ app_dir }}/bootstrap/cache"
+
+# ── Backup and restore scripts ────────────────────────────────────────────────
+- name: Deploy backup script
+  ansible.builtin.template:
+    src: backup.sh.j2
+    dest: "/usr/local/bin/{{ app_name }}-backup"
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Deploy restore script
+  ansible.builtin.template:
+    src: restore.sh.j2
+    dest: "/usr/local/bin/{{ app_name }}-restore"
+    owner: root
+    group: root
+    mode: '0750'
+
+# ── Daily backup cron ─────────────────────────────────────────────────────────
+- name: Install daily backup cron job
+  ansible.builtin.cron:
+    name: "{{ app_name }} daily backup"
+    minute: "30"
+    hour: "2"
+    user: root
+    job: "/usr/local/bin/{{ app_name }}-backup >> /var/log/{{ app_name }}-backup.log 2>&1"
+    cron_file: "{{ app_name }}-backup"

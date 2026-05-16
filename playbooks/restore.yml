@@ -1,0 +1,32 @@
+---
+# =============================================================================
+# restore.yml — Restore a backup snapshot on the server
+#
+# Usage:
+#   make restore                              # restore most recent snapshot
+#   make restore TIMESTAMP=20240115_023001    # restore specific snapshot
+#   ansible-playbook playbooks/restore.yml -e restore_timestamp=20240115_023001
+# =============================================================================
+- name: Restore Laravel application
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: List available snapshots
+      ansible.builtin.command: "/usr/local/bin/{{ app_name }}-restore --list"
+      register: snapshot_list
+      changed_when: false
+
+    - name: Show available snapshots
+      ansible.builtin.debug:
+        msg: "{{ snapshot_list.stdout_lines }}"
+
+    - name: Restore snapshot
+      ansible.builtin.command: >
+        /usr/local/bin/{{ app_name }}-restore
+        {{ '--timestamp ' + restore_timestamp if restore_timestamp is defined else '--last' }}
+      register: restore_output
+
+    - name: Show restore output
+      ansible.builtin.debug:
+        msg: "{{ restore_output.stdout_lines }}"

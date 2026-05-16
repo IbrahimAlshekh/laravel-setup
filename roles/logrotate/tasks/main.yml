@@ -1,0 +1,6 @@
+---
+- name: Deploy logrotate config for {{ app_name }}
+  ansible.builtin.template:
+    src: logrotate.conf.j2
+    dest: "/etc/logrotate.d/{{ app_name }}"
+    mode: '0644'

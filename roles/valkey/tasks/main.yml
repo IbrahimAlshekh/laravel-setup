@@ -1,0 +1,35 @@
+---
+- name: Enable Ubuntu universe repository
+  ansible.builtin.apt_repository:
+    repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_facts['distribution_release'] }} universe"
+    state: present
+    update_cache: yes
+
+- name: Install Valkey
+  ansible.builtin.apt:
+    name: valkey
+    state: present
+
+- name: Deploy Valkey app config
+  ansible.builtin.template:
+    src: valkey-app.conf.j2
+    dest: /etc/valkey/valkey-app.conf
+    owner: valkey
+    group: valkey
+    mode: '0640'
+  no_log: true
+  notify: Restart valkey
+
+- name: Include app config in main valkey.conf
+  ansible.builtin.lineinfile:
+    path: /etc/valkey/valkey.conf
+    line: 'include /etc/valkey/valkey-app.conf'
+    insertafter: EOF
+    create: no
+  notify: Restart valkey
+
+- name: Enable and start Valkey
+  ansible.builtin.service:
+    name: valkey-server
+    state: started
+    enabled: yes

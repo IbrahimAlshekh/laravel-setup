@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# =============================================================================
+# {{ app_name }}-backup — Create a timestamped backup snapshot
+# Deployed by Ansible. Variables are baked in; secrets sourced at runtime.
+#
+# Usage: sudo {{ app_name }}-backup
+# =============================================================================
+set -euo pipefail
+
+APP_NAME="{{ app_name }}"
+APP_DIR="{{ app_dir }}"
+BACKUP_DIR="{{ backup_dir }}"
+KEEP_BACKUPS="{{ keep_backups }}"
+SECRETS_FILE="{{ secrets_file }}"
+
+# Load secrets at runtime (never baked into script)
+# shellcheck source=/dev/null
+source "${SECRETS_FILE}"
+
+TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+
+mkdir -p "${BACKUP_DIR}"
+chmod 700 "${BACKUP_DIR}"
+chown root:root "${BACKUP_DIR}"
+
+# ── Database ──────────────────────────────────────────────────────────────────
+db_conn="$(grep -E '^DB_CONNECTION=' "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo 'mysql')"
+db_host="$(grep -E '^DB_HOST='       "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo '127.0.0.1')"
+db_port="$(grep -E '^DB_PORT='       "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo '3306')"
+db_name="$(grep -E '^DB_DATABASE='   "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "${APP_NAME}")"
+db_user="$(grep -E '^DB_USERNAME='   "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "${APP_NAME}")"
+db_pass="$(grep -E '^DB_PASSWORD='   "${APP_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "${DB_PASS:-}")"
+
+case "$db_conn" in
+    mysql|mariadb)
+        db_backup="${BACKUP_DIR}/db_${TIMESTAMP}.sql.gz"
+        tmp_cnf="$(mktemp)"
+        chmod 600 "${tmp_cnf}"
+        printf '[mysqldump]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
+            "${db_host}" "${db_port}" "${db_user}" "${db_pass}" > "${tmp_cnf}"
+        trap "rm -f '${tmp_cnf}'" RETURN EXIT
+        mysqldump \
+            --defaults-extra-file="${tmp_cnf}" \
+            --connect-timeout=10 \
+            --single-transaction \
+            --quick \
+            --lock-tables=false \
+            --set-gtid-purged=OFF \
+            "${db_name}" | gzip -9 > "${db_backup}"
+        chmod 600 "${db_backup}"
+        echo "DB backup → ${db_backup}"
+        ;;
+    sqlite)
+        sqlite_path="${db_name}"
+        [[ "${sqlite_path}" != /* ]] && sqlite_path="${APP_DIR}/${sqlite_path}"
+        [[ -f "${sqlite_path}" ]] || sqlite_path="${APP_DIR}/database/database.sqlite"
+        if [[ -f "${sqlite_path}" ]]; then
+            sqlite_backup="${BACKUP_DIR}/db_${TIMESTAMP}.sqlite.gz"
+            gzip -9 -c "${sqlite_path}" > "${sqlite_backup}"
+            chmod 600 "${sqlite_backup}"
+            echo "SQLite backup → ${sqlite_backup}"
+        fi
+        ;;
+esac
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+if [[ -d "${APP_DIR}/storage/app" ]]; then
+    storage_backup="${BACKUP_DIR}/storage_${TIMESTAMP}.tar.gz"
+    tar -czf "${storage_backup}" \
+        --exclude="${APP_DIR}/storage/logs" \
+        --exclude="${APP_DIR}/storage/framework" \
+        -C "${APP_DIR}" \
+        storage/app 2>/dev/null
+    chmod 600 "${storage_backup}"
+    echo "Storage backup → ${storage_backup}"
+fi
+
+# ── Git ref ───────────────────────────────────────────────────────────────────
+if [[ -d "${APP_DIR}/.git" ]]; then
+    ref_file="${BACKUP_DIR}/git_${TIMESTAMP}.ref"
+    git -C "${APP_DIR}" rev-parse HEAD > "${ref_file}"
+    chmod 600 "${ref_file}"
+fi
+
+# ── Rotate old backups ────────────────────────────────────────────────────────
+_rotate() {
+    local dir="$1" glob="$2"
+    local files
+    mapfile -t files < <(ls -t "${dir}/"${glob} 2>/dev/null || true)
+    local count="${#files[@]}"
+    if (( count > KEEP_BACKUPS )); then
+        rm -f "${files[@]:${KEEP_BACKUPS}}"
+    fi
+}
+
+_rotate "${BACKUP_DIR}" "db_*.sql.gz"
+_rotate "${BACKUP_DIR}" "db_*.sqlite.gz"
+_rotate "${BACKUP_DIR}" "storage_*.tar.gz"
+_rotate "${BACKUP_DIR}" "git_*.ref"
+
+echo "Backup complete (keeping last ${KEEP_BACKUPS})"

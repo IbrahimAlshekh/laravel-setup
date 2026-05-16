@@ -1,0 +1,42 @@
+; =============================================================================
+; Supervisor config for {{ app_name }}
+; Managed by Ansible — do not edit manually.
+; =============================================================================
+
+[program:{{ app_name }}-queue]
+process_name    = %(program_name)s_%(process_num)02d
+command         = php {{ app_dir }}/artisan queue:work redis \
+                      --sleep=3 \
+                      --tries=3 \
+                      --max-time=3600 \
+                      --timeout=90
+directory       = {{ app_dir }}
+autostart       = true
+autorestart     = true
+startsecs       = 1
+startretries    = 3
+stopasgroup     = true
+killasgroup     = true
+user            = {{ app_user }}
+numprocs        = 2
+redirect_stderr = true
+stdout_logfile              = {{ app_dir }}/storage/logs/queue.log
+stdout_logfile_maxbytes     = 10MB
+stdout_logfile_backups      = 5
+stopwaitsecs    = 3600
+
+[program:{{ app_name }}-scheduler]
+; Runs `schedule:work` which fires schedule:run every minute — no cron needed.
+process_name    = %(program_name)s
+command         = php {{ app_dir }}/artisan schedule:work
+directory       = {{ app_dir }}
+autostart       = true
+autorestart     = true
+user            = {{ app_user }}
+redirect_stderr         = true
+stdout_logfile          = {{ app_dir }}/storage/logs/scheduler.log
+stdout_logfile_maxbytes = 5MB
+stdout_logfile_backups  = 3
+
+[group:{{ app_name }}]
+programs = {{ app_name }}-queue,{{ app_name }}-scheduler
