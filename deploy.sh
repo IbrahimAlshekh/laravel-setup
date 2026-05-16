@@ -86,6 +86,9 @@ trap _deploy_failed ERR
 
 # ── 4. Pull latest code ───────────────────────────────────────────────────────
 section "Git pull (${REPO_BRANCH})"
+# Root runs git on a directory owned by APP_USER — mark it safe to suppress
+# the "dubious ownership" error introduced in git 2.35.2.
+git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
 git fetch --prune origin "${REPO_BRANCH}"
 git reset --hard "origin/${REPO_BRANCH}"
 COMMIT="$(git rev-parse --short HEAD)"

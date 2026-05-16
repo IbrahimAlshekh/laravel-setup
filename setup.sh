@@ -422,6 +422,7 @@ read -rp "Press Enter once the deploy key has been added to GitHub..."
 
 # Clone repository
 mkdir -p "${APP_DIR}"
+git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
 if [[ ! -d "${APP_DIR}/.git" ]]; then
     GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o UserKnownHostsFile=${SSH_HOME_REAL}/known_hosts" \
         git clone --branch "${REPO_BRANCH}" "${REPO_URL}" "${APP_DIR}"
