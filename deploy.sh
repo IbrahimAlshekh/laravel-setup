@@ -120,7 +120,7 @@ if [[ -f "pnpm-lock.yaml" ]]; then
     # --frozen-lockfile enforces integrity checksums, so allowing build scripts
     # here matches the trust level of `npm ci` / `yarn install --frozen-lockfile`.
     pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
-    pnpm run build --config.dangerouslyAllowAllBuilds=true
+    pnpm run build
     success "Assets compiled"
 elif [[ -f "package-lock.json" ]]; then
     section "npm build"
