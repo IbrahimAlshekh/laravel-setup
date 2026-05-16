@@ -85,12 +85,9 @@ fi
 # ── Rotate old backups ────────────────────────────────────────────────────────
 _rotate() {
     local dir="$1" glob="$2"
-    local files
-    mapfile -t files < <(ls -t "${dir}/"${glob} 2>/dev/null || true)
-    local count="${#files[@]}"
-    if (( count > KEEP_BACKUPS )); then
-        rm -f "${files[@]:${KEEP_BACKUPS}}"
-    fi
+    ls -t "${dir}/"${glob} 2>/dev/null \
+        | tail -n +"$(( KEEP_BACKUPS + 1 ))" \
+        | xargs -r rm -f
 }
 
 _rotate "${BACKUP_DIR}" "db_*.sql.gz"
