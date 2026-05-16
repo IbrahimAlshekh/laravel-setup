@@ -52,7 +52,8 @@ if [[ "${INITIAL_DEPLOY}" == "false" ]]; then
     section "Pre-deploy backup"
     # shellcheck source=lib/backup.sh
     source "${SCRIPT_DIR}/lib/backup.sh"
-    run_backup
+    # Run in a subshell so a backup failure warns but does not abort the deploy.
+    (run_backup) || warn "Pre-deploy backup failed — continuing without snapshot"
 fi
 
 # ── 2. Maintenance mode ON ────────────────────────────────────────────────────

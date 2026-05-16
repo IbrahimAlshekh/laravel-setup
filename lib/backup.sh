@@ -58,6 +58,8 @@ run_backup() {
             chmod 600 "${tmp_cnf}"
             printf '[mysqldump]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
                 "${db_host}" "${db_port}" "${db_user}" "${db_pass}" > "${tmp_cnf}"
+            # shellcheck disable=SC2064
+            trap "rm -f '${tmp_cnf}'" RETURN EXIT
             mysqldump \
                 --defaults-extra-file="${tmp_cnf}" \
                 --connect-timeout=10 \
@@ -66,7 +68,6 @@ run_backup() {
                 --lock-tables=false \
                 --set-gtid-purged=OFF \
                 "${db_name}" | gzip -9 > "${db_backup}"
-            rm -f "${tmp_cnf}"
             chmod 600 "${db_backup}"
             success "DB backup → ${db_backup}"
             ;;
