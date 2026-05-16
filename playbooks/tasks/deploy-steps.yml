@@ -11,6 +11,12 @@
     COMPOSER_NO_INTERACTION: "1"
     COMPOSER_HOME: /root/.composer
 
+- name: Generate application key (required before asset build)
+  ansible.builtin.shell: |
+    grep -q '^APP_KEY=.\+' .env || php artisan key:generate --force
+  args:
+    chdir: "{{ app_dir }}"
+
 - name: Check for pnpm lockfile
   ansible.builtin.stat:
     path: "{{ app_dir }}/pnpm-lock.yaml"
@@ -56,12 +62,6 @@
   args:
     chdir: "{{ app_dir }}"
   when: npm_lock.stat.exists and not pnpm_lock.stat.exists
-
-- name: Generate application key (if not set)
-  ansible.builtin.shell: |
-    grep -q '^APP_KEY=.\+' .env || php artisan key:generate --force
-  args:
-    chdir: "{{ app_dir }}"
 
 - name: Clear old caches
   ansible.builtin.command:
