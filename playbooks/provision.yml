@@ -20,6 +20,16 @@
           - ansible_facts['distribution_major_version'] | int >= 22
         fail_msg: "This playbook requires Ubuntu 22.04 or 24.04."
 
+    - name: Create app system user (required before PHP-FPM pool is configured)
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        system: yes
+        shell: /bin/bash
+        home: "{{ app_dir }}"
+        create_home: no
+        groups: www-data
+        append: yes
+
   roles:
     - role: common
       tags: common
