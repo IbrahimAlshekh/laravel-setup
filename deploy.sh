@@ -94,6 +94,12 @@ git reset --hard "origin/${REPO_BRANCH}"
 COMMIT="$(git rev-parse --short HEAD)"
 info "Deployed commit: $(git log -1 --oneline)"
 
+# Verify this is actually a Laravel application before going any further.
+[[ -f "composer.json" ]] || \
+    error "No composer.json found in ${APP_DIR}.\nCheck REPO_URL in .env.deploy — it must point to your Laravel application repo."
+[[ -f "artisan" ]] || \
+    error "No artisan script found in ${APP_DIR}.\nThis does not appear to be a Laravel application."
+
 # ── 5. Composer ───────────────────────────────────────────────────────────────
 section "Composer install"
 export COMPOSER_ALLOW_SUPERUSER=1
