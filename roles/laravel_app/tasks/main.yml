@@ -102,10 +102,8 @@
     mode: '0755'
 
 - name: Mark app directory as safe for git
-  community.general.git_config:
-    name: safe.directory
-    value: "{{ app_dir }}"
-    scope: global
+  ansible.builtin.command: git config --global --add safe.directory {{ app_dir }}
+  changed_when: false
 
 - name: Clone repository
   ansible.builtin.git:

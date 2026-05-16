@@ -17,6 +17,16 @@
   args:
     chdir: "{{ app_dir }}"
 
+- name: Clear config cache so artisan reads fresh .env
+  ansible.builtin.command:
+    cmd: php artisan optimize:clear
+    chdir: "{{ app_dir }}"
+
+- name: Run database migrations (required before asset build for route discovery)
+  ansible.builtin.command:
+    cmd: php artisan migrate --force
+    chdir: "{{ app_dir }}"
+
 - name: Check for pnpm lockfile
   ansible.builtin.stat:
     path: "{{ app_dir }}/pnpm-lock.yaml"
@@ -62,16 +72,6 @@
   args:
     chdir: "{{ app_dir }}"
   when: npm_lock.stat.exists and not pnpm_lock.stat.exists
-
-- name: Clear old caches
-  ansible.builtin.command:
-    cmd: php artisan optimize:clear
-    chdir: "{{ app_dir }}"
-
-- name: Run database migrations
-  ansible.builtin.command:
-    cmd: php artisan migrate --force
-    chdir: "{{ app_dir }}"
 
 - name: Create storage symlink
   ansible.builtin.command:

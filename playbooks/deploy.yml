@@ -32,6 +32,10 @@
         chdir: "{{ app_dir }}"
       failed_when: false
 
+    - name: Mark app directory as safe for git
+      ansible.builtin.command: git config --global --add safe.directory {{ app_dir }}
+      changed_when: false
+
     - name: Pull latest code
       ansible.builtin.git:
         repo: "{{ repo_url }}"
