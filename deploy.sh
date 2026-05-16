@@ -2,12 +2,9 @@
 # =============================================================================
 # deploy.sh — Repeatable application deployment
 #
-# Usage (manual):
-#   sudo bash deploy.sh           # run as root → drops to APP_USER internally
-#   sudo -u <APP_USER> bash deploy.sh  # or run directly as the app user
-#
-# Usage (initial, called from setup.sh):
-#   bash deploy.sh --initial      # skips pre-deploy backup on first run
+# Usage:
+#   sudo bash deploy.sh           # must run as root
+#   sudo bash deploy.sh --initial # skips pre-deploy backup on first run
 #
 # Triggered automatically when DEPLOY_ON_PUSH=true (via webhook listener).
 #
@@ -20,6 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+require_root
 load_deploy_env
 
 # shellcheck source=lib/secrets.sh
@@ -33,20 +31,6 @@ AUTO_ROLLBACK="${AUTO_ROLLBACK:-false}"
 for arg in "$@"; do
     [[ "$arg" == "--initial" ]] && INITIAL_DEPLOY=true
 done
-
-# ── Privilege handling ────────────────────────────────────────────────────────
-# If invoked as root, re-exec as APP_USER (non-root owns the code).
-# setup.sh calls this explicitly as APP_USER, but manual sudo goes through root.
-if [[ $EUID -eq 0 ]]; then
-    exec sudo -u "${APP_USER}" \
-        env AUTO_ROLLBACK="${AUTO_ROLLBACK}" \
-            DEPLOY_ENV_FILE="${DEPLOY_ENV_FILE:-${SCRIPT_DIR}/.env.deploy}" \
-        bash "${BASH_SOURCE[0]}" "$@"
-fi
-
-# From here we run as APP_USER.
-[[ "$(id -un)" == "${APP_USER}" ]] || \
-    error "deploy.sh must run as ${APP_USER} (got $(id -un))"
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 [[ -d "${APP_DIR}/.git" ]] || error "Not a git repository: ${APP_DIR}. Run setup.sh first."
@@ -111,7 +95,7 @@ info "Deployed commit: $(git log -1 --oneline)"
 section "Composer install"
 export COMPOSER_ALLOW_SUPERUSER=1
 export COMPOSER_NO_INTERACTION=1
-export COMPOSER_HOME="${APP_DIR}/.composer-cache"
+export COMPOSER_HOME=/root/.composer
 composer install \
     --no-dev \
     --optimize-autoloader \
@@ -146,14 +130,20 @@ success "Migrations complete"
 # ── 9. Storage symlink ────────────────────────────────────────────────────────
 php artisan storage:link --force 2>/dev/null || true
 
-# ── 10. File permissions ──────────────────────────────────────────────────────
+# ── 10. File permissions & ownership ─────────────────────────────────────────
 section "Permissions"
-# Only fix the writable directories — not the entire repo (avoids slow find + touching .git).
-chmod -R ug+rw,o-w "${APP_DIR}/storage"
-chmod -R ug+rw,o-w "${APP_DIR}/bootstrap/cache"
-find "${APP_DIR}/storage" -type d -exec chmod ug+rwx,o-rx {} \;
-find "${APP_DIR}/bootstrap/cache" -type d -exec chmod ug+rwx,o-rx {} \;
-success "Permissions set"
+# Hand all files to APP_USER:www-data so the PHP-FPM pool (running as APP_USER)
+# owns the code. Root deployed the files; now transfer ownership for isolation.
+chown -R "${APP_USER}:www-data" "${APP_DIR}"
+# Directories: 755 — owner rwx, group rx, others rx
+find "${APP_DIR}" -not -path "${APP_DIR}/.git/*" -type d -exec chmod 755 {} \;
+# Files: 644
+find "${APP_DIR}" -not -path "${APP_DIR}/.git/*" -type f -exec chmod 644 {} \;
+# Writable directories: 775 — APP_USER and www-data (FPM) can write
+chmod -R 775 "${APP_DIR}/storage" "${APP_DIR}/bootstrap/cache"
+# .env must not be world-readable
+chmod 640 "${APP_DIR}/.env" 2>/dev/null || true
+success "Ownership → ${APP_USER}:www-data, permissions set"
 
 # ── 11. Rebuild caches ────────────────────────────────────────────────────────
 section "Optimise"
@@ -167,8 +157,8 @@ success "Laravel caches rebuilt"
 section "Service restart"
 # Full restart of PHP-FPM is required: OPcache validate_timestamps=0 means
 # reload alone won't pick up new bytecode.
-sudo /bin/systemctl restart "php${PHP_VERSION}-fpm"
-sudo /usr/bin/supervisorctl restart "${APP_NAME}:*" 2>/dev/null || true
+systemctl restart "php${PHP_VERSION}-fpm"
+supervisorctl restart "${APP_NAME}:*" 2>/dev/null || true
 success "Services restarted"
 
 # ── 13. Maintenance mode OFF ──────────────────────────────────────────────────

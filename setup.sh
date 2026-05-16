@@ -489,9 +489,8 @@ fi
 # ── 13. Initial deployment ────────────────────────────────────────────────────
 section "Initial deployment"
 
-# Run as the app user
 GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o UserKnownHostsFile=${SSH_HOME_REAL}/known_hosts" \
-    sudo -u "${APP_USER}" bash "${SCRIPT_DIR}/deploy.sh" --initial
+    bash "${SCRIPT_DIR}/deploy.sh" --initial
 success "Application deployed"
 
 # ── 14. Supervisor ────────────────────────────────────────────────────────────
@@ -556,16 +555,7 @@ render_template \
     "644"
 success "Daily backup cron installed (02:30 daily, kept ${KEEP_BACKUPS} days)"
 
-# ── 20. Sudoers drop-in for deploy user ───────────────────────────────────────
-section "Sudoers"
-render_template \
-    "${SCRIPT_DIR}/config/sudoers-deploy.tmpl" \
-    "/etc/sudoers.d/${APP_USER}" \
-    "440"
-visudo -cf "/etc/sudoers.d/${APP_USER}" || { rm "/etc/sudoers.d/${APP_USER}"; error "Sudoers syntax error"; }
-success "Sudoers configured for ${APP_USER}"
-
-# ── 21. Deploy-on-push (webhook) ──────────────────────────────────────────────
+# ── 20. Deploy-on-push (webhook) ──────────────────────────────────────────────
 if [[ "${DEPLOY_ON_PUSH}" == "true" ]]; then
     section "Deploy-on-push (webhook)"
     apt_install webhook
@@ -576,14 +566,14 @@ if [[ "${DEPLOY_ON_PUSH}" == "true" ]]; then
         "/etc/webhook/${APP_NAME}-hooks.json" \
         "640" "root:${APP_USER}"
 
-    # Wrapper script invoked by webhook
+    # Wrapper script invoked by webhook (runs as root via webhook service)
     cat > "/usr/local/bin/${APP_NAME}-deploy" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 exec bash ${SCRIPT_DIR}/deploy.sh >> ${APP_DIR}/storage/logs/deploy.log 2>&1
 EOF
     chmod 750 "/usr/local/bin/${APP_NAME}-deploy"
-    chown "${APP_USER}" "/usr/local/bin/${APP_NAME}-deploy"
+    chown root:root "/usr/local/bin/${APP_NAME}-deploy"
 
     # Systemd unit
     render_template \

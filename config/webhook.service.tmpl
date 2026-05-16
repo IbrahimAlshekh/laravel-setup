@@ -11,8 +11,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=${APP_USER}
-Group=www-data
+User=root
 ExecStart=/usr/bin/webhook \
     -hooks /etc/webhook/${APP_NAME}-hooks.json \
     -ip 127.0.0.1 \
@@ -20,12 +19,7 @@ ExecStart=/usr/bin/webhook \
     -verbose
 Restart=on-failure
 RestartSec=5
-
-# Restrict capabilities to the minimum
-NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectSystem=strict
-ReadWritePaths=${APP_DIR}/storage/logs
 
 [Install]
 WantedBy=multi-user.target
