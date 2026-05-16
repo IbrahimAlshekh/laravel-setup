@@ -152,8 +152,14 @@ section "Permissions"
 chown -R "${APP_USER}:www-data" "${APP_DIR}"
 # Directories: 755 — owner rwx, group rx, others rx
 find "${APP_DIR}" -not -path "${APP_DIR}/.git/*" -type d -exec chmod 755 {} \;
-# Files: 644
+# Files: 644 — strips world-write and execute bits from all source/asset files
 find "${APP_DIR}" -not -path "${APP_DIR}/.git/*" -type f -exec chmod 644 {} \;
+# node_modules .bin entries need execute — restore only those, nothing else
+if [[ -d "${APP_DIR}/node_modules" ]]; then
+    find "${APP_DIR}/node_modules" -name ".bin" -type d | while read -r bin_dir; do
+        chmod 755 "${bin_dir}"/* 2>/dev/null || true
+    done
+fi
 # Writable directories: 775 — APP_USER and www-data (FPM) can write
 chmod -R 775 "${APP_DIR}/storage" "${APP_DIR}/bootstrap/cache"
 # .env must not be world-readable
