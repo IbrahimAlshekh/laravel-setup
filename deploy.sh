@@ -70,6 +70,7 @@ _deploy_failed() {
     local exit_code=$?
     warn "Deployment failed (exit ${exit_code}) — lifting maintenance mode"
     php artisan up 2>/dev/null || true
+    chown -R "${APP_USER}:www-data" "${APP_DIR}" 2>/dev/null || true
 
     if [[ "${AUTO_ROLLBACK}" == "true" ]]; then
         warn "AUTO_ROLLBACK=true — attempting to restore last snapshot"
