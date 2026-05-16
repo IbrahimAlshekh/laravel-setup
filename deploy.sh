@@ -117,7 +117,20 @@ success "Composer dependencies updated"
 # Only build if a pnpm lockfile (or package.json) exists.
 if [[ -f "pnpm-lock.yaml" ]]; then
     section "pnpm build"
-    pnpm install --frozen-lockfile
+    # pnpm 10+ exits 1 with ERR_PNPM_IGNORED_BUILDS when packages have unapproved
+    # build scripts. Packages ARE installed; only native compilation is skipped
+    # (WASM fallback). Treat this specific error as non-fatal.
+    _pnpm_log=$(mktemp)
+    set +e
+    pnpm install --frozen-lockfile 2>&1 | tee "$_pnpm_log"
+    _pnpm_rc=${PIPESTATUS[0]}
+    set -e
+    if [[ $_pnpm_rc -ne 0 ]]; then
+        grep -q "ERR_PNPM_IGNORED_BUILDS" "$_pnpm_log" \
+            || { rm -f "$_pnpm_log"; die "pnpm install failed"; }
+        warn "pnpm: unapproved build scripts blocked — WASM fallbacks in use"
+    fi
+    rm -f "$_pnpm_log"
     pnpm run build
     success "Assets compiled"
 elif [[ -f "package-lock.json" ]]; then
