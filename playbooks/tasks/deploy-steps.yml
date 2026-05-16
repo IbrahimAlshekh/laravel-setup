@@ -2,6 +2,10 @@
 # Shared deploy steps — imported by both provision.yml (initial) and deploy.yml.
 # Runs as root (become: yes set in the parent play).
 
+- name: Allow git to operate in vendor subdirectories owned by other users
+  ansible.builtin.command:
+    cmd: git config --global --add safe.directory '*'
+
 - name: Install Composer dependencies
   ansible.builtin.command:
     cmd: composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
@@ -22,9 +26,23 @@
     cmd: php artisan optimize:clear
     chdir: "{{ app_dir }}"
 
+- name: Ensure migrations tracking table exists
+  ansible.builtin.shell: php artisan migrate:install --no-interaction 2>/dev/null || true
+  args:
+    chdir: "{{ app_dir }}"
+  changed_when: false
+
 - name: Run database migrations (required before asset build for route discovery)
-  ansible.builtin.command:
-    cmd: php artisan migrate --force
+  ansible.builtin.shell: |
+    output=$(php artisan migrate --force 2>&1)
+    rc=$?
+    echo "$output"
+    if [ $rc -ne 0 ] && echo "$output" | grep -q "already exists"; then
+      php artisan migrate --fake --force
+      exit 0
+    fi
+    exit $rc
+  args:
     chdir: "{{ app_dir }}"
 
 - name: Check for pnpm lockfile
