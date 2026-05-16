@@ -1,7 +1,9 @@
 ---
-- name: Install MySQL server
+- name: Install MySQL server and Python driver
   ansible.builtin.apt:
-    name: mysql-server
+    name:
+      - mysql-server
+      - python3-pymysql
     state: present
 
 - name: Enable and start MySQL
