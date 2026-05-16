@@ -1,8 +1,7 @@
 ---
 - name: Reread supervisor
-  community.general.supervisorctl:
-    name: all
-    state: present
+  ansible.builtin.command: supervisorctl reread
+  changed_when: false
   listen: "Reread supervisor"
 
 - name: Update supervisor
