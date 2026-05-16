@@ -1,4 +1,15 @@
 ---
+# ── App system user ───────────────────────────────────────────────────────────
+- name: Create app system user
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: yes
+    shell: /bin/bash
+    home: "{{ app_dir }}"
+    create_home: no
+    groups: www-data
+    append: yes
+
 # ── Secrets directory ─────────────────────────────────────────────────────────
 - name: Create secrets directory
   ansible.builtin.file:
@@ -12,7 +23,6 @@
   ansible.builtin.copy:
     dest: "{{ secrets_file }}"
     content: |
-      DB_ROOT_PASS={{ db_root_pass }}
       DB_PASS={{ db_pass }}
       REDIS_PASS={{ redis_pass }}
       WEBHOOK_SECRET={{ webhook_secret }}
@@ -21,17 +31,6 @@
     group: "{{ app_user }}"
     mode: '0640'
   no_log: true
-
-# ── App system user ───────────────────────────────────────────────────────────
-- name: Create app system user
-  ansible.builtin.user:
-    name: "{{ app_user }}"
-    system: yes
-    shell: /bin/bash
-    home: "{{ app_dir }}"
-    create_home: no
-    groups: www-data
-    append: yes
 
 # ── Deploy key ────────────────────────────────────────────────────────────────
 - name: Create SSH key directory

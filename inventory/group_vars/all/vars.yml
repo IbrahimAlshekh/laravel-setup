@@ -42,7 +42,7 @@ node_version: "22"
 deploy_on_push: false
 
 # ── Secrets (referenced from vault.yml — do not set plain values here) ────────
-db_root_pass: "{{ vault_db_root_pass }}"
+# db_root_pass is not needed — Ubuntu MySQL root uses auth_socket (OS-level auth).
 db_pass: "{{ vault_db_pass }}"
 redis_pass: "{{ vault_redis_pass }}"
 webhook_secret: "{{ vault_webhook_secret }}"

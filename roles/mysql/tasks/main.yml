@@ -1,4 +1,9 @@
 ---
+# Ubuntu ships MySQL with root using the auth_socket plugin — authentication is
+# handled by the OS (only the root OS user can connect). This is intentional.
+# We connect via the Unix socket using login_unix_socket, which is the correct
+# method for Ubuntu. No root password is needed or set.
+
 - name: Install MySQL server and Python driver
   ansible.builtin.apt:
     name:
@@ -12,49 +17,28 @@
     state: started
     enabled: yes
 
-- name: Check if root .my.cnf already exists
-  ansible.builtin.stat:
-    path: /root/.my.cnf
-  register: root_mycnf
-
-- name: Harden MySQL and set root password (first run via socket)
+- name: Harden MySQL (remove anonymous users, remote root, test db)
   ansible.builtin.shell: |
-    mysql -u root <<'SQL'
+    mysql -u root <<'ENDSQL'
     DELETE FROM mysql.user WHERE User='';
     DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
     DROP DATABASE IF EXISTS test;
     DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%';
-    ALTER USER 'root'@'localhost' IDENTIFIED BY '{{ db_root_pass }}';
     FLUSH PRIVILEGES;
-    SQL
-  no_log: true
-  when: not root_mycnf.stat.exists
-
-- name: Write root .my.cnf for subsequent runs
-  ansible.builtin.copy:
-    dest: /root/.my.cnf
-    content: |
-      [client]
-      user=root
-      password={{ db_root_pass }}
-    mode: '0600'
-  no_log: true
-  when: not root_mycnf.stat.exists
+    ENDSQL
+  changed_when: false
 
 - name: Create app database
   community.mysql.mysql_db:
-    login_user: root
-    login_password: "{{ db_root_pass }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     name: "{{ app_name }}"
     encoding: utf8mb4
     collation: utf8mb4_unicode_ci
     state: present
-  no_log: true
 
 - name: Create app MySQL user
   community.mysql.mysql_user:
-    login_user: root
-    login_password: "{{ db_root_pass }}"
+    login_unix_socket: /var/run/mysqld/mysqld.sock
     name: "{{ app_name }}"
     host: localhost
     password: "{{ db_pass }}"
