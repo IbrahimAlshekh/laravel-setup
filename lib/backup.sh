@@ -53,14 +53,20 @@ run_backup() {
     case "$db_conn" in
         mysql|mariadb)
             local db_backup="${BACKUP_DIR}/db_${timestamp}.sql.gz"
+            local tmp_cnf
+            tmp_cnf="$(mktemp)"
+            chmod 600 "${tmp_cnf}"
+            printf '[mysqldump]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
+                "${db_host}" "${db_port}" "${db_user}" "${db_pass}" > "${tmp_cnf}"
             mysqldump \
-                -h"${db_host}" -P"${db_port}" \
-                -u"${db_user}" -p"${db_pass}" \
+                --defaults-extra-file="${tmp_cnf}" \
+                --connect-timeout=10 \
                 --single-transaction \
                 --quick \
                 --lock-tables=false \
                 --set-gtid-purged=OFF \
                 "${db_name}" | gzip -9 > "${db_backup}"
+            rm -f "${tmp_cnf}"
             chmod 600 "${db_backup}"
             success "DB backup → ${db_backup}"
             ;;
