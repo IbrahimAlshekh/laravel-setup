@@ -61,11 +61,13 @@
         cmd: php artisan up
         chdir: "{{ app_dir }}"
 
-    - name: Health check — PHP-FPM active
+    - name: Health check — services active
       ansible.builtin.service_facts:
     - ansible.builtin.assert:
-        that: "ansible_facts.services['php{{ php_version }}-fpm.service'].state == 'running'"
-        fail_msg: "PHP-FPM is not running after deploy!"
+        that:
+          - ansible_facts.services['php' ~ php_version ~ '-fpm.service'].state == 'running'
+          - ansible_facts.services['nginx.service'].state == 'running'
+        fail_msg: "A required service (PHP-FPM or Nginx) is not running after deploy!"
 
     - name: Health check — HTTP /up endpoint
       ansible.builtin.uri:

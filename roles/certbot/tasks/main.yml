@@ -83,3 +83,8 @@
 
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers
+
+- name: Restart Nginx to ensure HTTPS config is active
+  ansible.builtin.service:
+    name: nginx
+    state: restarted

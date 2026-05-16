@@ -27,17 +27,24 @@
     mode: '0644'
   notify: Reload nginx
 
+- name: Check if HTTPS nginx site is already enabled
+  ansible.builtin.stat:
+    path: "/etc/nginx/sites-enabled/{{ app_name }}"
+  register: https_site_enabled
+
 - name: Deploy HTTP-only site (for ACME challenge before TLS)
   ansible.builtin.template:
     src: nginx-http-only.conf.j2
     dest: "/etc/nginx/sites-available/{{ app_name }}-http"
     mode: '0644'
+  when: not https_site_enabled.stat.exists
 
 - name: Enable HTTP-only site
   ansible.builtin.file:
     src: "/etc/nginx/sites-available/{{ app_name }}-http"
     dest: "/etc/nginx/sites-enabled/{{ app_name }}-http"
     state: link
+  when: not https_site_enabled.stat.exists
 
 - name: Remove default Nginx site
   ansible.builtin.file:
