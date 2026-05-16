@@ -114,7 +114,6 @@
     version: "{{ repo_branch }}"
     update: no
     accept_hostkey: no
-  become_user: "{{ app_user }}"
   environment:
     GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
   when: not git_dir.stat.exists
