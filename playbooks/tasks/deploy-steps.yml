@@ -21,12 +21,32 @@
     path: "{{ app_dir }}/package-lock.json"
   register: npm_lock
 
+- name: Grant execute permissions to pnpm binaries for build
+  ansible.builtin.shell: |
+    find {{ app_dir }}/node_modules/.bin -maxdepth 1 \
+      | xargs -r readlink -f 2>/dev/null \
+      | sort -u \
+      | xargs -r chmod +x 2>/dev/null || true
+  changed_when: false
+  failed_when: false
+  when: pnpm_lock.stat.exists
+
 - name: Build assets with pnpm
   ansible.builtin.shell: |
     pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
     pnpm run build
   args:
     chdir: "{{ app_dir }}"
+  when: pnpm_lock.stat.exists
+
+- name: Revert execute permissions on pnpm binaries after build
+  ansible.builtin.shell: |
+    find {{ app_dir }}/node_modules/.bin -maxdepth 1 \
+      | xargs -r readlink -f 2>/dev/null \
+      | sort -u \
+      | xargs -r chmod 644 2>/dev/null || true
+  changed_when: false
+  failed_when: false
   when: pnpm_lock.stat.exists
 
 - name: Build assets with npm
@@ -70,11 +90,17 @@
 
     - name: Set directory permissions (755)
       ansible.builtin.shell: |
-        find {{ app_dir }} -not -path '{{ app_dir }}/.git/*' -type d -exec chmod 755 {} \;
+        find {{ app_dir }} \
+          -not -path '{{ app_dir }}/.git/*' \
+          -not -path '{{ app_dir }}/node_modules/*' \
+          -type d -exec chmod 755 {} \;
 
     - name: Set file permissions (644)
       ansible.builtin.shell: |
-        find {{ app_dir }} -not -path '{{ app_dir }}/.git/*' -type f -exec chmod 644 {} \;
+        find {{ app_dir }} \
+          -not -path '{{ app_dir }}/.git/*' \
+          -not -path '{{ app_dir }}/node_modules/*' \
+          -type f -exec chmod 644 {} \;
 
     - name: Set writable directories (775)
       ansible.builtin.file:
