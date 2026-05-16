@@ -16,8 +16,8 @@
     path: "/etc/{{ app_name }}"
     state: directory
     owner: root
-    group: root
-    mode: '0700'
+    group: "{{ app_user }}"
+    mode: '0710'
 
 - name: Write secrets file
   ansible.builtin.copy:
