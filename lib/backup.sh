@@ -27,10 +27,10 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 # ── Helpers (may already be sourced) ─────────────────────────────────────────
-: "${info:=echo}"
-: "${success:=echo}"
-: "${warn:=echo}"
-: "${error:?error function must be defined}"
+declare -f info    > /dev/null || info()    { echo "$*"; }
+declare -f success > /dev/null || success() { echo "$*"; }
+declare -f warn    > /dev/null || warn()    { echo "$*" >&2; }
+declare -f error   > /dev/null || { echo "error function must be defined" >&2; exit 1; }
 
 # ── Core ──────────────────────────────────────────────────────────────────────
 run_backup() {
