@@ -121,11 +121,13 @@ if [[ -f "pnpm-lock.yaml" ]]; then
     # here matches the trust level of `npm ci` / `yarn install --frozen-lockfile`.
     pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
     pnpm run build
+    chown -R "${APP_USER}:www-data" "${APP_DIR}/public/build" 2>/dev/null || true
     success "Assets compiled"
 elif [[ -f "package-lock.json" ]]; then
     section "npm build"
     npm ci --omit=dev
     npm run build
+    chown -R "${APP_USER}:www-data" "${APP_DIR}/public/build" 2>/dev/null || true
     success "Assets compiled (npm)"
 fi
 
