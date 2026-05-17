@@ -25,7 +25,6 @@
       tags: common
 
     - role: php
-      tasks_from: install
       tags: php
 
     - role: composer
@@ -35,26 +34,21 @@
       tags: nodejs
 
     - role: mysql
-      tasks_from: install
       tags: mysql
 
     - role: valkey
       tags: valkey
 
     - role: nginx
-      tasks_from: install
       tags: nginx
 
     - role: certbot
-      tasks_from: install
       tags: certbot
 
     - role: supervisor
-      tasks_from: install
       tags: supervisor
 
     - role: fail2ban
-      tasks_from: install
       tags: fail2ban
 
     - role: ufw
@@ -71,8 +65,7 @@
           Server setup complete!
 
           Next: add a site with
-            1. Create sites/<repo>/vars.yml   (domain, certbot_email)
-            2. Create sites/<repo>/vault.yml  (db_pass) and encrypt it
-            3. make setup SITE=ORG/REPO:BRANCH
+            1. Create sites/<repo>/vault.yml  (db_pass) and encrypt it
+            2. make setup SITE=ORG/REPO:BRANCH DOMAIN=example.com EMAIL=you@example.com
           ══════════════════════════════════════════════════════════════
       tags: always

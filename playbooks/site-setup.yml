@@ -7,14 +7,12 @@
 # application. Can be re-run safely to update configuration.
 #
 # Usage:
-#   make setup SITE=AtheerSolutions/castlegroup:dev
-#
-# Requires sites/<repo>/vars.yml with at minimum:
-#   domain:         example.com
-#   certbot_email:  you@example.com
+#   make setup SITE=AtheerSolutions/castlegroup:dev \
+#              DOMAIN=castlegroup.example.com \
+#              EMAIL=admin@example.com
 #
 # Requires sites/<repo>/vault.yml (ansible-vault encrypted) with:
-#   db_pass:        <strong password>
+#   db_pass: <strong password>
 # =============================================================================
 - name: Set up application site
   hosts: all
@@ -27,7 +25,7 @@
           - github_org is defined
           - github_repo is defined
           - repo_branch is defined
-        fail_msg: "Usage: make setup SITE=ORG/REPO:BRANCH"
+        fail_msg: "Usage: make setup SITE=ORG/REPO:BRANCH DOMAIN=example.com EMAIL=you@example.com"
 
     - name: Derive site variables from SITE argument
       ansible.builtin.set_fact:
@@ -46,53 +44,71 @@
         deploy_key_path: "/etc/{{ app_name }}/ssh/id_ed25519"
         backup_dir:      "/var/backups/{{ app_name }}"
 
-  roles:
-    - role: laravel_app
+  tasks:
+    - name: Set up app user, repo, .env, and backup scripts
+      ansible.builtin.import_role:
+        name: laravel_app
       tags: app
 
-    - role: mysql
-      tasks_from: site
+    - name: Create MySQL database and user
+      ansible.builtin.import_role:
+        name: mysql
+        tasks_from: site
       tags: mysql
 
-    - role: php
-      tasks_from: site
+    - name: Configure PHP-FPM pool
+      ansible.builtin.import_role:
+        name: php
+        tasks_from: site
       tags: php
 
-    - role: nginx
-      tasks_from: site
+    - name: Configure nginx vhost
+      ansible.builtin.import_role:
+        name: nginx
+        tasks_from: site
       tags: nginx
 
-    - role: certbot
-      tasks_from: site
-      tags: certbot, tls
+    - name: Obtain TLS certificate
+      ansible.builtin.import_role:
+        name: certbot
+        tasks_from: site
+      tags: [certbot, tls]
 
-    - role: supervisor
-      tasks_from: site
+    - name: Configure Supervisor workers
+      ansible.builtin.import_role:
+        name: supervisor
+        tasks_from: site
       tags: supervisor
 
-    - role: fail2ban
-      tasks_from: site
+    - name: Configure fail2ban jails
+      ansible.builtin.import_role:
+        name: fail2ban
+        tasks_from: site
       tags: fail2ban
 
-    - role: logrotate
+    - name: Configure log rotation
+      ansible.builtin.import_role:
+        name: logrotate
       tags: logrotate
 
-    - role: webhook
-      tags: webhook
+    - name: Configure deploy webhook
+      ansible.builtin.import_role:
+        name: webhook
       when: deploy_on_push | default(false) | bool
+      tags: webhook
 
-  post_tasks:
     - name: Run initial deployment
       ansible.builtin.import_tasks: tasks/deploy-steps.yml
       tags: deploy
 
+  post_tasks:
     - name: Print site setup summary
       ansible.builtin.debug:
         msg: |
           ══════════════════════════════════════════════════════════════
           Site setup complete!
 
-            URL      : https://{{ domain | default('(set domain in sites/' + github_repo + '/vars.yml)') }}
+            URL      : https://{{ domain | default('(set via DOMAIN= parameter)') }}
             App dir  : {{ app_dir }}
             App user : {{ app_user }}
             Secrets  : {{ secrets_file }}
