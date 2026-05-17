@@ -26,6 +26,7 @@
           - github_repo is defined
           - repo_branch is defined
         fail_msg: "Usage: make setup SITE=ORG/REPO:BRANCH DOMAIN=example.com EMAIL=you@example.com"
+      tags: always
 
     - name: Derive site variables from SITE argument
       ansible.builtin.set_fact:
@@ -35,6 +36,7 @@
         repo_url:        "git@github.com:{{ github_org }}/{{ github_repo }}.git"
         db_name:         "{{ github_repo }}"
         db_user:         "{{ github_repo }}"
+      tags: always
 
     - name: Derive site path variables
       ansible.builtin.set_fact:
@@ -43,6 +45,7 @@
         ssh_key_dir:     "/etc/{{ app_name }}/ssh"
         deploy_key_path: "/etc/{{ app_name }}/ssh/id_ed25519"
         backup_dir:      "/var/backups/{{ app_name }}"
+      tags: always
 
   tasks:
     - name: Set up app user, repo, .env, and backup scripts

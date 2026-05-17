@@ -10,6 +10,10 @@ ifdef VERBOSE
   _V := -v
 endif
 
+ifdef TAGS
+  _TAGS := --tags $(TAGS)
+endif
+
 # ── SITE=ORG/REPO:BRANCH parsing ──────────────────────────────────────────────
 # Example: SITE=AtheerSolutions/castlegroup:dev
 ifdef SITE
@@ -34,7 +38,7 @@ ifdef EMAIL
   _EXTRA     += -e certbot_email=$(EMAIL)
 endif
 
-_AP := ansible-playbook $(_VAULT) $(_V)
+_AP := ansible-playbook $(_VAULT) $(_V) $(_TAGS)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 help:

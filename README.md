@@ -161,6 +161,7 @@ make restore SITE=AtheerSolutions/castlegroup:dev TIMESTAMP=20240115_023001
 
 | Option | Description |
 |--------|-------------|
+| `TAGS=tag1,tag2` | Run only the specified Ansible role(s), skipping the rest |
 | `VERBOSE=1` | Show full Ansible task output (`-v`) |
 | `VAULT_PASS_FILE=path` | Vault password file (default: `.vault-pass`) |
 
@@ -288,18 +289,39 @@ Daily snapshots run at 02:30 AM via cron. Each snapshot contains:
 
 ## Running individual roles
 
-```bash
-# Re-apply only the nginx site config for one site
-ansible-playbook playbooks/site-setup.yml \
-  -e github_org=AtheerSolutions -e github_repo=castlegroup -e repo_branch=dev \
-  -e @sites/castlegroup/vars.yml -e @sites/castlegroup/vault.yml \
-  -e domain=castlegroup.example.com --tags nginx
+Use `TAGS=` to re-apply only a specific part of the playbook without running everything else. This is useful for pushing a config change without re-provisioning the whole site.
 
-# Re-apply only server-level PHP config
-ansible-playbook playbooks/server-setup.yml --tags php
+```bash
+# Re-apply only the nginx vhost config for one site
+make setup SITE=AtheerSolutions/castlegroup:dev TAGS=nginx
+
+# Re-apply only the Supervisor workers for one site
+make setup SITE=AtheerSolutions/castlegroup:dev TAGS=supervisor
+
+# Re-apply only the PHP-FPM pool for one site
+make setup SITE=AtheerSolutions/castlegroup:dev TAGS=php
+
+# Re-apply only server-level nginx install (no SITE needed)
+make setup TAGS=nginx
 ```
 
-Available tags: `common`, `php`, `composer`, `nodejs`, `mysql`, `valkey`, `nginx`, `certbot`/`tls`, `app`, `supervisor`, `fail2ban`, `ufw`, `ssh`, `logrotate`, `webhook`.
+Available tags for `make setup SITE=...`:
+
+| Tag | What it updates |
+|-----|----------------|
+| `nginx` | nginx vhost config + reload |
+| `php` | PHP-FPM pool config + restart |
+| `mysql` | MySQL database and user |
+| `supervisor` | Supervisor worker config + restart |
+| `certbot` / `tls` | TLS certificate (obtain or renew) |
+| `app` | App user, deploy key, `.env`, backup scripts |
+| `fail2ban` | fail2ban jails |
+| `logrotate` | Log rotation config |
+| `webhook` | Deploy-on-push webhook listener |
+
+Available tags for `make setup` (server-level, no `SITE`):
+
+`common`, `php`, `composer`, `nodejs`, `mysql`, `valkey`, `nginx`, `certbot`, `supervisor`, `fail2ban`, `ufw`, `ssh`
 
 ## Security posture
 
