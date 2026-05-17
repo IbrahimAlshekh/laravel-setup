@@ -1,0 +1,30 @@
+---
+- name: Deploy HTTPS nginx site config
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name }}"
+    mode: '0644'
+  notify: Reload nginx
+
+- name: Enable HTTPS site
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ app_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+    state: link
+  notify: Reload nginx
+
+- name: Remove HTTP-only site
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/nginx/sites-enabled/{{ app_name }}-http"
+    - "/etc/nginx/sites-available/{{ app_name }}-http"
+  notify: Reload nginx
+
+- name: Test nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

@@ -6,6 +6,11 @@
     mode: '0644'
   notify: Reload nginx
 
+- name: Check if TLS certificate exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ domain }}/fullchain.pem"
+  register: tls_cert
+
 - name: Check if HTTPS nginx site is already enabled
   ansible.builtin.stat:
     path: "/etc/nginx/sites-enabled/{{ app_name }}"
@@ -16,14 +21,18 @@
     src: nginx-http-only.conf.j2
     dest: "/etc/nginx/sites-available/{{ app_name }}-http"
     mode: '0644'
-  when: not https_site_enabled.stat.exists
+  when: not https_site_enabled.stat.exists and not tls_cert.stat.exists
 
 - name: Enable HTTP-only site
   ansible.builtin.file:
     src: "/etc/nginx/sites-available/{{ app_name }}-http"
     dest: "/etc/nginx/sites-enabled/{{ app_name }}-http"
     state: link
-  when: not https_site_enabled.stat.exists
+  when: not https_site_enabled.stat.exists and not tls_cert.stat.exists
+
+- name: Deploy HTTPS site config
+  ansible.builtin.include_tasks: https-site.yml
+  when: tls_cert.stat.exists
 
 - name: Test Nginx config
   ansible.builtin.command: nginx -t

@@ -40,44 +40,13 @@
     --agree-tos
     --non-interactive
   when: not tls_cert.stat.exists
-  register: certbot_result
 
 - name: Generate DH params (2048-bit, runs once)
   ansible.builtin.command:
     cmd: openssl dhparam -out /etc/nginx/ssl-dhparams.pem 2048
     creates: /etc/nginx/ssl-dhparams.pem
 
-- name: Deploy HTTPS Nginx site config
-  ansible.builtin.template:
-    src: "{{ role_path }}/../nginx/templates/nginx.conf.j2"
-    dest: "/etc/nginx/sites-available/{{ app_name }}"
-    mode: '0644'
-  notify: Reload nginx
-
-- name: Enable HTTPS site
-  ansible.builtin.file:
-    src: "/etc/nginx/sites-available/{{ app_name }}"
-    dest: "/etc/nginx/sites-enabled/{{ app_name }}"
-    state: link
-  notify: Reload nginx
-
-- name: Remove HTTP-only site (now replaced by HTTPS config)
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: absent
-  loop:
-    - "/etc/nginx/sites-enabled/{{ app_name }}-http"
-    - "/etc/nginx/sites-available/{{ app_name }}-http"
-  notify: Reload nginx
-
-- name: Test Nginx config
-  ansible.builtin.command: nginx -t
-  changed_when: false
-
-- name: Flush handlers
-  ansible.builtin.meta: flush_handlers
-
-- name: Restart Nginx to ensure HTTPS config is active
-  ansible.builtin.service:
+- name: Deploy nginx HTTPS site config
+  ansible.builtin.include_role:
     name: nginx
-    state: restarted
+    tasks_from: https-site
