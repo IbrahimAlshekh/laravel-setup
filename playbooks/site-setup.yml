@@ -1,0 +1,105 @@
+---
+# =============================================================================
+# site-setup.yml — Per-site provisioning
+#
+# Creates isolated system user, PHP-FPM pool, MySQL database, deploy key,
+# nginx vhost, TLS certificate, Supervisor workers, and backup cron for one
+# application. Can be re-run safely to update configuration.
+#
+# Usage:
+#   make setup SITE=AtheerSolutions/castlegroup:dev
+#
+# Requires sites/<repo>/vars.yml with at minimum:
+#   domain:         example.com
+#   certbot_email:  you@example.com
+#
+# Requires sites/<repo>/vault.yml (ansible-vault encrypted) with:
+#   db_pass:        <strong password>
+# =============================================================================
+- name: Set up application site
+  hosts: all
+  become: yes
+
+  pre_tasks:
+    - name: Validate SITE variables
+      ansible.builtin.assert:
+        that:
+          - github_org is defined
+          - github_repo is defined
+          - repo_branch is defined
+        fail_msg: "Usage: make setup SITE=ORG/REPO:BRANCH"
+
+    - name: Derive site variables from SITE argument
+      ansible.builtin.set_fact:
+        app_name:        "{{ github_repo }}"
+        app_user:        "{{ github_repo }}"
+        app_dir:         "/var/www/{{ github_repo }}"
+        repo_url:        "git@github.com:{{ github_org }}/{{ github_repo }}.git"
+        db_name:         "{{ github_repo }}"
+        db_user:         "{{ github_repo }}"
+
+    - name: Derive site path variables
+      ansible.builtin.set_fact:
+        secrets_file:    "/etc/{{ app_name }}/secrets.env"
+        deploy_log:      "/var/www/{{ github_repo }}/storage/logs/deploy.log"
+        ssh_key_dir:     "/etc/{{ app_name }}/ssh"
+        deploy_key_path: "/etc/{{ app_name }}/ssh/id_ed25519"
+        backup_dir:      "/var/backups/{{ app_name }}"
+
+  roles:
+    - role: laravel_app
+      tags: app
+
+    - role: mysql
+      tasks_from: site
+      tags: mysql
+
+    - role: php
+      tasks_from: site
+      tags: php
+
+    - role: nginx
+      tasks_from: site
+      tags: nginx
+
+    - role: certbot
+      tasks_from: site
+      tags: certbot, tls
+
+    - role: supervisor
+      tasks_from: site
+      tags: supervisor
+
+    - role: fail2ban
+      tasks_from: site
+      tags: fail2ban
+
+    - role: logrotate
+      tags: logrotate
+
+    - role: webhook
+      tags: webhook
+      when: deploy_on_push | default(false) | bool
+
+  post_tasks:
+    - name: Run initial deployment
+      ansible.builtin.import_tasks: tasks/deploy-steps.yml
+      tags: deploy
+
+    - name: Print site setup summary
+      ansible.builtin.debug:
+        msg: |
+          ══════════════════════════════════════════════════════════════
+          Site setup complete!
+
+            URL      : https://{{ domain | default('(set domain in sites/' + github_repo + '/vars.yml)') }}
+            App dir  : {{ app_dir }}
+            App user : {{ app_user }}
+            Secrets  : {{ secrets_file }}
+            Backups  : {{ backup_dir }} (daily 02:30, keep {{ keep_backups | default(7) }})
+
+          Day-2 operations:
+            Deploy  : make deploy SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}
+            Backup  : make backup SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}
+          ══════════════════════════════════════════════════════════════
+      tags: always

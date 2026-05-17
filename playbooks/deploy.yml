@@ -10,6 +10,28 @@
   hosts: all
   become: yes
 
+  pre_tasks:
+    - name: Validate SITE variables
+      ansible.builtin.assert:
+        that:
+          - github_org is defined
+          - github_repo is defined
+          - repo_branch is defined
+        fail_msg: "Usage: make deploy SITE=ORG/REPO:BRANCH"
+
+    - name: Derive site variables from SITE argument
+      ansible.builtin.set_fact:
+        app_name:        "{{ github_repo }}"
+        app_user:        "{{ github_repo }}"
+        app_dir:         "/var/www/{{ github_repo }}"
+        repo_url:        "git@github.com:{{ github_org }}/{{ github_repo }}.git"
+
+    - name: Derive site path variables
+      ansible.builtin.set_fact:
+        deploy_log:      "/var/www/{{ github_repo }}/storage/logs/deploy.log"
+        ssh_key_dir:     "/etc/{{ app_name }}/ssh"
+        deploy_key_path: "/etc/{{ app_name }}/ssh/id_ed25519"
+
   tasks:
     - name: Sanity checks
       block:

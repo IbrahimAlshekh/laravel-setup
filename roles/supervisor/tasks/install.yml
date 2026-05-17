@@ -1,0 +1,11 @@
+---
+- name: Install supervisor
+  ansible.builtin.apt:
+    name: supervisor
+    state: present
+
+- name: Enable and start supervisor
+  ansible.builtin.service:
+    name: supervisor
+    state: started
+    enabled: yes

@@ -1,0 +1,78 @@
+---
+# =============================================================================
+# server-setup.yml — One-time server provisioning (software only, no sites)
+#
+# Installs and hardens: nginx, PHP, MySQL, Valkey, Node.js, Composer,
+# Supervisor, fail2ban, UFW, and SSH. Does not configure any application site.
+#
+# Usage:
+#   make setup
+# =============================================================================
+- name: Set up server
+  hosts: all
+  become: yes
+
+  pre_tasks:
+    - name: Verify target is Ubuntu 22.04 or 24.04
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == "Ubuntu"
+          - ansible_facts['distribution_major_version'] | int >= 22
+        fail_msg: "This playbook requires Ubuntu 22.04 or 24.04."
+
+  roles:
+    - role: common
+      tags: common
+
+    - role: php
+      tasks_from: install
+      tags: php
+
+    - role: composer
+      tags: composer
+
+    - role: nodejs
+      tags: nodejs
+
+    - role: mysql
+      tasks_from: install
+      tags: mysql
+
+    - role: valkey
+      tags: valkey
+
+    - role: nginx
+      tasks_from: install
+      tags: nginx
+
+    - role: certbot
+      tasks_from: install
+      tags: certbot
+
+    - role: supervisor
+      tasks_from: install
+      tags: supervisor
+
+    - role: fail2ban
+      tasks_from: install
+      tags: fail2ban
+
+    - role: ufw
+      tags: ufw
+
+    - role: ssh_hardening
+      tags: ssh
+
+  post_tasks:
+    - name: Print server setup summary
+      ansible.builtin.debug:
+        msg: |
+          ══════════════════════════════════════════════════════════════
+          Server setup complete!
+
+          Next: add a site with
+            1. Create sites/<repo>/vars.yml   (domain, certbot_email)
+            2. Create sites/<repo>/vault.yml  (db_pass) and encrypt it
+            3. make setup SITE=ORG/REPO:BRANCH
+          ══════════════════════════════════════════════════════════════
+      tags: always

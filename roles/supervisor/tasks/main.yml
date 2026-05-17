@@ -1,20 +1,3 @@
 ---
-- name: Install supervisor
-  ansible.builtin.apt:
-    name: supervisor
-    state: present
-
-- name: Deploy supervisor config
-  ansible.builtin.template:
-    src: supervisor.conf.j2
-    dest: "/etc/supervisor/conf.d/{{ app_name }}.conf"
-    mode: '0644'
-  notify:
-    - Reread supervisor
-    - Update supervisor
-
-- name: Enable and start supervisor
-  ansible.builtin.service:
-    name: supervisor
-    state: started
-    enabled: yes
+- import_tasks: install.yml
+- import_tasks: site.yml

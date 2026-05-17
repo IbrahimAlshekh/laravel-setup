@@ -1,0 +1,40 @@
+---
+- name: Install Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+- name: Open ports 80 and 443 in UFW (needed for ACME challenge)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    comment: "HTTP/HTTPS (pre-UFW-role)"
+  loop:
+    - "80"
+    - "443"
+
+- name: Create webroot for ACME challenge
+  ansible.builtin.file:
+    path: /var/www/html
+    state: directory
+    mode: '0755'
+
+- name: Remove default Nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Enable and start Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Test Nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

@@ -1,104 +1,22 @@
 ---
 # =============================================================================
-# provision.yml — Full one-time server provisioning
+# provision.yml — Convenience wrapper: server setup + site setup in one run
 #
-# Usage:
-#   ansible-playbook playbooks/provision.yml           (all steps)
-#   ansible-playbook playbooks/provision.yml --tags php  (single role)
+# Equivalent to:
+#   make setup
+#   make setup SITE=ORG/REPO:BRANCH
 #
-# Run: make provision
+# Usage (via Makefile targets):
+#   make setup                          # server only
+#   make setup SITE=ORG/REPO:BRANCH    # site only
+#
+# Or run both at once with ansible-playbook directly:
+#   ansible-playbook playbooks/provision.yml \
+#     -e github_org=AtheerSolutions \
+#     -e github_repo=castlegroup \
+#     -e repo_branch=dev \
+#     -e @sites/castlegroup/vars.yml \
+#     -e @sites/castlegroup/vault.yml
 # =============================================================================
-- name: Provision Laravel server
-  hosts: all
-  become: yes
-
-  pre_tasks:
-    - name: Verify target is Ubuntu 22.04 or 24.04
-      ansible.builtin.assert:
-        that:
-          - ansible_facts['distribution'] == "Ubuntu"
-          - ansible_facts['distribution_major_version'] | int >= 22
-        fail_msg: "This playbook requires Ubuntu 22.04 or 24.04."
-
-    - name: Create app system user (required before PHP-FPM pool is configured)
-      ansible.builtin.user:
-        name: "{{ app_user }}"
-        system: yes
-        shell: /bin/bash
-        home: "{{ app_dir }}"
-        create_home: no
-        groups: www-data
-        append: yes
-
-  roles:
-    - role: common
-      tags: common
-
-    - role: php
-      tags: php
-
-    - role: composer
-      tags: composer
-
-    - role: nodejs
-      tags: nodejs
-
-    - role: mysql
-      tags: mysql
-
-    - role: valkey
-      tags: valkey
-
-    - role: nginx
-      tags: nginx
-
-    - role: certbot
-      tags: certbot, tls
-
-    - role: laravel_app
-      tags: app
-
-    - role: supervisor
-      tags: supervisor
-
-    - role: fail2ban
-      tags: fail2ban
-
-    - role: ufw
-      tags: ufw
-
-    - role: ssh_hardening
-      tags: ssh
-
-    - role: logrotate
-      tags: logrotate
-
-    - role: webhook
-      tags: webhook
-      when: deploy_on_push | bool
-
-  post_tasks:
-    - name: Run initial deployment
-      ansible.builtin.import_tasks: ../playbooks/tasks/deploy-steps.yml
-      tags: deploy
-
-    - name: Print provisioning summary
-      ansible.builtin.debug:
-        msg: |
-          ══════════════════════════════════════════════════════════════
-          Provisioning complete!
-
-            URL      : https://{{ domain }}
-            App dir  : {{ app_dir }}
-            App user : {{ app_user }}
-            Secrets  : {{ secrets_file }}
-            Backups  : {{ backup_dir }} (daily 02:30, keep {{ keep_backups }})
-
-          Day-2 operations:
-            Deploy   : make deploy
-            Backup   : make backup
-            Restore  : make restore                      (last snapshot)
-                       make restore TIMESTAMP=YYYYMMDD_HHMMSS
-            On server: sudo {{ app_name }}-restore --list
-          ══════════════════════════════════════════════════════════════
-      tags: always
+- import_playbook: server-setup.yml
+- import_playbook: site-setup.yml

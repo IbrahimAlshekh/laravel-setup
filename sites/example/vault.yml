@@ -1,0 +1,12 @@
+---
+# Secrets for this site. Encrypt this file before committing:
+#   ansible-vault encrypt sites/<your-repo>/vault.yml
+#
+# Variables defined here are loaded automatically by make commands
+# when SITE=ORG/REPO:BRANCH matches this repo name.
+
+db_pass: "change-me"
+
+# Only needed when deploy_on_push: true in vars.yml
+# webhook_secret: "change-me"
+# webhook_path: "/webhook/secret-path"

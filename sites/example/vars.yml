@@ -1,0 +1,15 @@
+---
+# Optional site overrides.
+# domain and certbot_email are passed as DOMAIN= and EMAIL= at the command line:
+#   make setup SITE=ORG/REPO:BRANCH DOMAIN=example.com EMAIL=you@example.com
+#
+# This file is for optional overrides only — php_version, deploy_on_push, etc.
+
+# Enable GitHub webhook for auto-deploy on push
+deploy_on_push: false
+
+# PHP version for this site (overrides server default of 8.4)
+# php_version: "8.4"
+
+# Number of backup snapshots to retain (overrides server default of 7)
+# keep_backups: 7

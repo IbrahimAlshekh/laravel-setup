@@ -1,0 +1,12 @@
+---
+- name: Deploy PHP-FPM app pool config
+  ansible.builtin.template:
+    src: php-fpm-pool.conf.j2
+    dest: "/etc/php/{{ php_version }}/fpm/pool.d/{{ app_name }}.conf"
+    mode: '0644'
+  notify: Restart php-fpm
+
+- name: Disable default www pool
+  ansible.builtin.command:
+    cmd: "mv /etc/php/{{ php_version }}/fpm/pool.d/www.conf /etc/php/{{ php_version }}/fpm/pool.d/www.conf.disabled"
+    creates: "/etc/php/{{ php_version }}/fpm/pool.d/www.conf.disabled"

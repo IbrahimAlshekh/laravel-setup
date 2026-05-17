@@ -25,8 +25,8 @@
     content: |
       DB_PASS={{ db_pass }}
       REDIS_PASS={{ redis_pass }}
-      WEBHOOK_SECRET={{ webhook_secret }}
-      WEBHOOK_PATH={{ webhook_path }}
+      WEBHOOK_SECRET={{ webhook_secret | default('') }}
+      WEBHOOK_PATH={{ webhook_path | default('') }}
     owner: root
     group: "{{ app_user }}"
     mode: '0640'

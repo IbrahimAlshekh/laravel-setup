@@ -1,49 +1,22 @@
 ---
 # =============================================================================
-# Deployment configuration — fill in all values below.
-# Secrets (passwords, keys) live in vault.yml, which must be encrypted with
-# `ansible-vault encrypt group_vars/all/vault.yml` before committing.
+# Server-level defaults — apply to all sites on this server.
+#
+# Site-specific configuration (domain, certbot_email, deploy_on_push) lives in:
+#   sites/<repo>/vars.yml     (non-secret)
+#   sites/<repo>/vault.yml    (secrets — encrypt with ansible-vault)
+#
+# Site variables (app_name, app_dir, repo_url, etc.) are derived automatically
+# from the SITE=ORG/REPO:BRANCH argument passed to make commands.
 # =============================================================================
-
-# ── Application ───────────────────────────────────────────────────────────────
-# Domain name — no www, no protocol
-domain: "castlegroup.atheersolution.com"
-
-# Email for Let's Encrypt certificate notifications
-certbot_email: "info@atheersolution.com"
-
-# Git repository SSH URL (deploy key is generated and printed during provision)
-repo_url: "git@github.com:AtheerSolutions/castlegroup.git"
-
-# Branch to deploy
-repo_branch: "main"
-
-# Absolute path where the application lives on the server
-app_dir: "/var/www/castlegroup"
-
-# ── Derived variables (auto-computed — change only if you need a custom name) ─
-app_name: "{{ app_dir | basename }}"
-app_user: "{{ app_name }}"
-secrets_file: "/etc/{{ app_name }}/secrets.env"
-deploy_log: "{{ app_dir }}/storage/logs/deploy.log"
-ssh_key_dir: "/etc/{{ app_name }}/ssh"
-deploy_key_path: "{{ ssh_key_dir }}/id_ed25519"
-
-# ── Backups ───────────────────────────────────────────────────────────────────
-backup_dir: "/var/backups/{{ app_name }}"
-keep_backups: 7
 
 # ── Runtime versions ──────────────────────────────────────────────────────────
 php_version: "8.4"
 node_version: "22"
 
-# ── Features ──────────────────────────────────────────────────────────────────
-# Set to true to install a webhook listener for deploy-on-push from GitHub
-deploy_on_push: false
+# ── Backups ───────────────────────────────────────────────────────────────────
+keep_backups: 7
 
-# ── Secrets (referenced from vault.yml — do not set plain values here) ────────
-# db_root_pass is not needed — Ubuntu MySQL root uses auth_socket (OS-level auth).
-db_pass: "{{ vault_db_pass }}"
+# ── Valkey (shared Redis-compatible cache/queue) ──────────────────────────────
+# redis_pass comes from inventory/group_vars/all/vault.yml (server-level secret)
 redis_pass: "{{ vault_redis_pass }}"
-webhook_secret: "{{ vault_webhook_secret }}"
-webhook_path: "{{ vault_webhook_path }}"

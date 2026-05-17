@@ -1,0 +1,9 @@
+---
+- name: Deploy supervisor config for {{ app_name }}
+  ansible.builtin.template:
+    src: supervisor.conf.j2
+    dest: "/etc/supervisor/conf.d/{{ app_name }}.conf"
+    mode: '0644'
+  notify:
+    - Reread supervisor
+    - Update supervisor

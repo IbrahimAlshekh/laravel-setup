@@ -1,0 +1,35 @@
+---
+- name: Install MySQL server and Python driver
+  ansible.builtin.apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+    state: present
+
+- name: Enable and start MySQL
+  ansible.builtin.service:
+    name: mysql
+    state: started
+    enabled: yes
+
+- name: Harden MySQL (remove anonymous users, remote root, test db)
+  ansible.builtin.shell: |
+    mysql -u root <<'ENDSQL'
+    DELETE FROM mysql.user WHERE User='';
+    DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+    DROP DATABASE IF EXISTS test;
+    DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%';
+    FLUSH PRIVILEGES;
+    ENDSQL
+  changed_when: false
+
+- name: Bind MySQL to localhost only
+  ansible.builtin.lineinfile:
+    path: /etc/mysql/mysql.conf.d/mysqld.cnf
+    regexp: '^bind-address\s*='
+    line: 'bind-address = 127.0.0.1'
+    create: yes
+  notify: Restart mysql
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

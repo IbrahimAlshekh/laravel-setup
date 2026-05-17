@@ -1,16 +1,16 @@
 # Laravel VPS Setup — Ansible
 
-Ansible playbooks for deploying a Laravel application on a fresh Ubuntu 22.04 or 24.04 VPS. Idempotent — safe to re-run.
+Ansible playbooks for deploying Laravel applications on a fresh Ubuntu 22.04 or 24.04 VPS. Idempotent — safe to re-run. Supports multiple isolated sites on the same server.
 
 ## What gets installed
 
 | Component | Details |
 |-----------|---------|
-| PHP-FPM | Version configurable (default 8.4), OPcache production settings, dedicated pool |
+| PHP-FPM | Version configurable (default 8.4), OPcache production settings, per-site isolated pool |
 | Nginx | HTTPS with TLS 1.2/1.3, HSTS, security headers, rate-limiting on login endpoints |
-| MySQL 8 | App database + user, localhost-only binding, anonymous accounts removed |
+| MySQL 8 | Per-site database + user, localhost-only binding, anonymous accounts removed |
 | Valkey | Redis-compatible, password-protected, dangerous commands disabled, localhost-only |
-| Supervisor | Queue workers (×2) + scheduler, auto-restart |
+| Supervisor | Queue workers (×2) + scheduler per site, auto-restart |
 | Fail2ban | Login brute-force, bot scanner, rate-limit violation, SSH brute-force jails |
 | UFW | Default deny, allows SSH / HTTP / HTTPS only |
 | Certbot | Let's Encrypt TLS certificate, auto-renew, DH params |
@@ -35,7 +35,7 @@ pip install ansible
 make deps   # installs community.mysql and community.general collections
 ```
 
-### 2. Configure your server
+### 2. Configure the server inventory
 
 Edit `inventory/hosts.yml`:
 
@@ -48,34 +48,31 @@ all:
       ansible_ssh_private_key_file: ~/.ssh/id_ed25519
 ```
 
-### 3. Set deployment variables
+### 3. Set up the server (once per VPS)
 
-Edit `group_vars/all/vars.yml` and fill in your values:
+Installs nginx, PHP, MySQL, Valkey, Node.js, Composer, Supervisor, fail2ban, UFW, and SSH hardening. No application-specific configuration.
 
-```yaml
-domain: "example.com"
-certbot_email: "admin@example.com"
-repo_url: "git@github.com:your-org/your-repo.git"
-repo_branch: "main"
-app_dir: "/var/www/myapp"
-backup_dir: "/var/backups/myapp"
-keep_backups: 7
-php_version: "8.4"
-deploy_on_push: false
+```bash
+make setup
 ```
 
-### 4. Set secrets
+### 4. Add secrets for your site
 
-Generate strong random secrets:
+Generate a strong database password:
 
 ```bash
 openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32
 ```
 
-Fill in `group_vars/all/vault.yml`, then encrypt it:
+Create `sites/<repo>/vault.yml` and encrypt it:
 
 ```bash
-ansible-vault encrypt group_vars/all/vault.yml
+mkdir -p sites/myrepo
+cat > sites/myrepo/vault.yml <<EOF
+db_pass: "your-strong-password"
+EOF
+
+ansible-vault encrypt sites/myrepo/vault.yml
 ```
 
 Save the vault password to `.vault-pass` (already gitignored):
@@ -85,90 +82,200 @@ echo "your-vault-password" > .vault-pass
 chmod 600 .vault-pass
 ```
 
-### 5. Provision the server
+### 5. Set up the application site
 
 ```bash
-make provision
+make setup SITE=AtheerSolutions/castlegroup:dev \
+           DOMAIN=castlegroup.example.com \
+           EMAIL=admin@example.com
 ```
 
 This will:
-1. Install and configure the full stack (~5–10 min)
+1. Create an isolated system user, PHP-FPM pool, and MySQL database for this site
 2. **Pause and print a deploy public key** — add it to GitHub before continuing (Settings → Deploy Keys → Add deploy key, read-only)
 3. Clone your repository and run the initial deployment
-4. Print a summary with your live URL
+4. Obtain a TLS certificate from Let's Encrypt
+5. Configure Supervisor workers, fail2ban jails, and daily backups
+6. Print a summary with your live URL
+
+### 6. Deploy
+
+```bash
+make deploy SITE=AtheerSolutions/castlegroup:dev
+```
+
+## Command reference
+
+### `make setup`
+
+Installs all server software. Run once per VPS.
+
+```bash
+make setup
+```
+
+### `make setup SITE=ORG/REPO:BRANCH`
+
+Provisions one application site. Re-running is safe and updates configuration.
+
+```bash
+make setup SITE=AtheerSolutions/castlegroup:dev \
+           DOMAIN=castlegroup.example.com \
+           EMAIL=admin@example.com
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `SITE` | `ORG/REPO:BRANCH` — GitHub org, repository name, and branch to deploy |
+| `DOMAIN` | Bare domain (no `www`, no `https://`) — used for nginx vhost and TLS cert |
+| `EMAIL` | Email for Let's Encrypt expiry notifications |
+
+### `make deploy SITE=ORG/REPO:BRANCH`
+
+Pulls the latest code, installs dependencies, runs migrations, builds assets, and restarts workers.
+
+```bash
+make deploy SITE=AtheerSolutions/castlegroup:dev
+```
+
+### `make backup SITE=ORG/REPO:BRANCH`
+
+Triggers a manual backup snapshot.
+
+```bash
+make backup SITE=AtheerSolutions/castlegroup:dev
+```
+
+### `make restore SITE=ORG/REPO:BRANCH`
+
+Restores the most recent backup snapshot.
+
+```bash
+make restore SITE=AtheerSolutions/castlegroup:dev
+
+# Restore a specific snapshot
+make restore SITE=AtheerSolutions/castlegroup:dev TIMESTAMP=20240115_023001
+```
+
+### Global options
+
+| Option | Description |
+|--------|-------------|
+| `VERBOSE=1` | Show full Ansible task output (`-v`) |
+| `VAULT_PASS_FILE=path` | Vault password file (default: `.vault-pass`) |
 
 ## Day-to-day operations
 
-| Task | Command |
-|------|---------|
-| Deploy latest code | `make deploy` |
-| Trigger a backup | `make backup` |
-| Restore last backup | `make restore` |
-| Restore specific snapshot | `make restore TIMESTAMP=20240115_023001` |
-
-### On the server directly
+On the server, per-site scripts are available at `/usr/local/bin/<repo>-backup` and `/usr/local/bin/<repo>-restore`:
 
 ```bash
 # List available backup snapshots
-sudo myapp-restore --list
+sudo castlegroup-restore --list
 
 # Restore most recent snapshot
-sudo myapp-restore --last
+sudo castlegroup-restore --last
 
 # Restore a specific snapshot
-sudo myapp-restore --timestamp 20240115_023001
+sudo castlegroup-restore --timestamp 20240115_023001
 
 # Run a manual backup
-sudo myapp-backup
+sudo castlegroup-backup
 ```
 
-(`myapp` is replaced with your `app_name`, which defaults to the basename of `app_dir`.)
+## Multiple sites on the same server
+
+Each `make setup SITE=...` call creates a fully isolated environment (system user, PHP-FPM pool, MySQL database, nginx vhost, TLS cert). Run it once per site:
+
+```bash
+make setup SITE=MyOrg/shop:main    DOMAIN=shop.example.com    EMAIL=admin@example.com
+make setup SITE=MyOrg/blog:main    DOMAIN=blog.example.com    EMAIL=admin@example.com
+make setup SITE=MyOrg/api:main     DOMAIN=api.example.com     EMAIL=admin@example.com
+```
+
+Each site gets its own `sites/<repo>/vault.yml` for secrets.
 
 ## Deploy-on-push (optional)
 
-Set `deploy_on_push: true` in `vars.yml` and re-run `make provision`. After provisioning, the output will display a webhook URL and instructions to configure it in GitHub (Settings → Webhooks).
+Add `deploy_on_push: true` to `sites/<repo>/vars.yml` and add a `webhook_secret` to the vault file:
+
+```yaml
+# sites/myrepo/vars.yml
+deploy_on_push: true
+```
+
+```yaml
+# sites/myrepo/vault.yml (before encrypting)
+db_pass: "..."
+webhook_secret: "your-hmac-secret"
+webhook_path: "/webhook/secret-path"
+```
+
+Re-run `make setup SITE=...` to install the webhook listener. The provisioning output will display the webhook URL and GitHub configuration instructions (Settings → Webhooks).
 
 ## Project structure
 
 ```
-├── ansible.cfg                  # Ansible configuration
-├── Makefile                     # Convenience targets (provision, deploy, backup, restore)
-├── requirements.yml             # Galaxy collection dependencies
+├── Makefile                     # make setup / deploy / backup / restore
+├── requirements.yml             # Ansible Galaxy collection dependencies
 ├── inventory/
-│   └── hosts.yml                # Server inventory
-├── group_vars/all/
-│   ├── vars.yml                 # Non-secret configuration
-│   └── vault.yml                # Encrypted secrets (ansible-vault)
+│   ├── hosts.yml                # Server inventory (IP, SSH key)
+│   └── group_vars/all/
+│       ├── vars.yml             # Server-level defaults (php_version, keep_backups)
+│       └── vault.yml            # Server-level secrets (redis_pass)
+├── sites/
+│   ├── example/
+│   │   ├── vars.yml             # Site option overrides template
+│   │   └── vault.yml            # Site secrets template
+│   └── <repo>/
+│       ├── vars.yml             # Optional overrides (deploy_on_push, php_version)
+│       └── vault.yml            # Encrypted site secrets (db_pass, webhook_secret)
 ├── playbooks/
-│   ├── provision.yml            # Full server setup (run once)
+│   ├── server-setup.yml         # Server software install (make setup)
+│   ├── site-setup.yml           # Per-site provisioning (make setup SITE=...)
 │   ├── deploy.yml               # Deploy latest code
 │   ├── backup.yml               # Trigger backup
 │   ├── restore.yml              # Restore snapshot
+│   ├── provision.yml            # Convenience: server-setup + site-setup in one run
 │   └── tasks/
-│       └── deploy-steps.yml     # Shared deploy steps (used by provision + deploy)
+│       └── deploy-steps.yml     # Shared deploy steps (composer, migrate, build, cache)
 └── roles/
     ├── common/                  # Base packages, unattended-upgrades
-    ├── php/                     # PHP-FPM, OPcache, app pool
+    ├── php/                     # PHP-FPM install (server) + per-site pool
     ├── composer/                # Composer installation
     ├── nodejs/                  # Node.js + pnpm
-    ├── mysql/                   # MySQL, database, user, hardening
+    ├── mysql/                   # MySQL install + hardening (server) + per-site DB/user
     ├── valkey/                  # Valkey (Redis-compatible) config
-    ├── nginx/                   # Nginx, HTTPS config, rate-limiting
-    ├── certbot/                 # Let's Encrypt certificate
+    ├── nginx/                   # Nginx install (server) + per-site vhost
+    ├── certbot/                 # Certbot install (server) + per-site TLS cert
     ├── ufw/                     # Firewall rules
     ├── ssh_hardening/           # SSH hardening
-    ├── fail2ban/                # Brute-force protection
-    ├── supervisor/              # Queue workers + scheduler
+    ├── fail2ban/                # Brute-force protection (server install + per-site jails)
+    ├── supervisor/              # Supervisor install (server) + per-site workers
     ├── logrotate/               # Log rotation
-    ├── laravel_app/             # App user, deploy key, repo, .env, backup/restore scripts
+    ├── laravel_app/             # App user, deploy key, repo clone, .env, backup scripts
     └── webhook/                 # Deploy-on-push webhook listener
 ```
 
+## Variable sources
+
+Variables are resolved in this order (later sources win):
+
+| Source | Contains |
+|--------|----------|
+| `inventory/group_vars/all/vars.yml` | Server defaults: `php_version`, `keep_backups` |
+| `inventory/group_vars/all/vault.yml` | Server secrets: `vault_redis_pass` |
+| `sites/<repo>/vars.yml` | Site overrides: `deploy_on_push`, `php_version` |
+| `sites/<repo>/vault.yml` | Site secrets: `db_pass`, `webhook_secret` |
+| `SITE=ORG/REPO:BRANCH` | Derived: `app_name`, `app_dir`, `repo_url`, `repo_branch` |
+| `DOMAIN=`, `EMAIL=` | `domain`, `certbot_email` |
+
 ## Secrets management
 
-Secrets (database passwords, Redis password, webhook HMAC key) live exclusively in `group_vars/all/vault.yml`, encrypted with `ansible-vault` and never committed in plain text. On the server they are written to `/etc/<app_name>/secrets.env` (mode 640, root:app_user only).
+Site secrets (`db_pass`, `webhook_secret`) live in `sites/<repo>/vault.yml`, encrypted with `ansible-vault`. Server-level secrets (`redis_pass`) live in `inventory/group_vars/all/vault.yml`. Neither is ever committed in plain text.
 
-To rotate a secret: update `vault.yml`, re-encrypt, and run `make provision` (idempotent).
+On the server, secrets are written to `/etc/<app_name>/secrets.env` (mode 640, readable only by root and the app user).
+
+To rotate a secret: update the vault file, re-encrypt, and re-run `make setup SITE=...` (idempotent).
 
 ## Backups
 
@@ -182,14 +289,14 @@ Daily snapshots run at 02:30 AM via cron. Each snapshot contains:
 ## Running individual roles
 
 ```bash
-# Only (re-)configure PHP-FPM
-ansible-playbook playbooks/provision.yml --tags php
+# Re-apply only the nginx site config for one site
+ansible-playbook playbooks/site-setup.yml \
+  -e github_org=AtheerSolutions -e github_repo=castlegroup -e repo_branch=dev \
+  -e @sites/castlegroup/vars.yml -e @sites/castlegroup/vault.yml \
+  -e domain=castlegroup.example.com --tags nginx
 
-# Only update Nginx config
-ansible-playbook playbooks/provision.yml --tags nginx
-
-# Only update fail2ban rules
-ansible-playbook playbooks/provision.yml --tags fail2ban
+# Re-apply only server-level PHP config
+ansible-playbook playbooks/server-setup.yml --tags php
 ```
 
 Available tags: `common`, `php`, `composer`, `nodejs`, `mysql`, `valkey`, `nginx`, `certbot`/`tls`, `app`, `supervisor`, `fail2ban`, `ufw`, `ssh`, `logrotate`, `webhook`.
@@ -198,9 +305,9 @@ Available tags: `common`, `php`, `composer`, `nodejs`, `mysql`, `valkey`, `nginx
 
 - SSH: key-only auth, password auth disabled, root login restricted, strong ciphers only
 - Firewall: UFW default deny — only ports 22, 80, 443 open
-- MySQL: localhost-only, no anonymous accounts, no remote root
+- MySQL: localhost-only, no anonymous accounts, no remote root, per-site users with minimal privileges
 - Valkey: localhost-only, password-required, dangerous commands disabled
-- PHP-FPM: `open_basedir` restriction, dangerous functions disabled
+- PHP-FPM: `open_basedir` restriction per site, dangerous functions disabled
 - Nginx: HSTS, CSP, X-Frame-Options, rate-limiting on auth endpoints (5 req/min)
 - Fail2ban: login brute-force, bot scanner, rate-limit violation, SSH brute-force jails
 - Unattended-upgrades: automatic security patches with auto-reboot for kernel updates

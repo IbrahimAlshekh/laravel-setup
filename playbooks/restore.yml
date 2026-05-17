@@ -11,6 +11,17 @@
   hosts: all
   become: yes
 
+  pre_tasks:
+    - name: Validate SITE variables
+      ansible.builtin.assert:
+        that:
+          - github_repo is defined
+        fail_msg: "Usage: make restore SITE=ORG/REPO:BRANCH"
+
+    - name: Derive app_name
+      ansible.builtin.set_fact:
+        app_name: "{{ github_repo }}"
+
   tasks:
     - name: List available snapshots
       ansible.builtin.command: "/usr/local/bin/{{ app_name }}-restore --list"
