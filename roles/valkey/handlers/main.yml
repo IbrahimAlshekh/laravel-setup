@@ -1,5 +1,5 @@
 ---
 - name: Restart valkey
   ansible.builtin.service:
-    name: valkey-server
+    name: redis-server
     state: restarted

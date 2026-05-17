@@ -1,10 +1,10 @@
 # =============================================================================
-# Valkey app config — managed by Ansible, do not edit manually.
-# Included at end of /etc/valkey/valkey.conf so these settings override defaults.
+# Redis app config — managed by Ansible, do not edit manually.
+# Included at end of /etc/redis/redis.conf so these settings override defaults.
 # =============================================================================
 
-# Bind only to localhost — never expose Valkey to the network.
-bind 127.0.0.1 -::1
+# Bind only to localhost — never expose to the network.
+bind 127.0.0.1
 protected-mode yes
 port 6379
 
@@ -31,6 +31,3 @@ rename-command DEBUG      ""
 rename-command SHUTDOWN   ""
 rename-command SLAVEOF    ""
 rename-command REPLICAOF  ""
-
-# Supervised by systemd
-supervised systemd

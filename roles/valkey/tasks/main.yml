@@ -1,35 +1,35 @@
 ---
-- name: Enable Ubuntu universe repository
-  ansible.builtin.apt_repository:
-    repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_facts['distribution_release'] }} universe"
+# Redis is the package available on Ubuntu 22.04. Valkey (its fork) requires
+# libc6 >= 2.38 which 22.04 doesn't ship. Redis is protocol-identical to
+# Valkey — the same PHP extension, Laravel config, and commands work unchanged.
+- name: Install Redis
+  ansible.builtin.apt:
+    name:
+      - redis-server
+      - redis-tools
     state: present
     update_cache: yes
 
-- name: Install Valkey
-  ansible.builtin.apt:
-    name: valkey
-    state: present
-
-- name: Deploy Valkey app config
+- name: Deploy Redis app config
   ansible.builtin.template:
     src: valkey-app.conf.j2
-    dest: /etc/valkey/valkey-app.conf
-    owner: valkey
-    group: valkey
+    dest: /etc/redis/redis-app.conf
+    owner: redis
+    group: redis
     mode: '0640'
   no_log: true
   notify: Restart valkey
 
-- name: Include app config in main valkey.conf
+- name: Include app config in main redis.conf
   ansible.builtin.lineinfile:
-    path: /etc/valkey/valkey.conf
-    line: 'include /etc/valkey/valkey-app.conf'
+    path: /etc/redis/redis.conf
+    line: 'include /etc/redis/redis-app.conf'
     insertafter: EOF
     create: no
   notify: Restart valkey
 
-- name: Enable and start Valkey
+- name: Enable and start Redis
   ansible.builtin.service:
-    name: valkey-server
+    name: redis-server
     state: started
     enabled: yes
