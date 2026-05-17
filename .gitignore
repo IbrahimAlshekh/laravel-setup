@@ -5,6 +5,9 @@
 # Ansible vault password file
 .vault-pass
 
+# Per-site configuration and secrets (machine-local, never commit)
+sites/
+
 # Ansible fact cache
 /tmp/ansible_facts_cache/
 

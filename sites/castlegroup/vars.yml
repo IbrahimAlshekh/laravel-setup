@@ -1,7 +1,0 @@
----
-# Non-secret overrides for the castlegroup site.
-# domain and certbot_email are passed as DOMAIN= and EMAIL= on the command line.
-# Secrets (db_pass) live in vault.yml — encrypt it with:
-#   ansible-vault encrypt sites/castlegroup/vault.yml
-
-deploy_on_push: false
