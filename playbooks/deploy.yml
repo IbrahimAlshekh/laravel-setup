@@ -64,6 +64,15 @@
         chdir: "{{ app_dir }}"
       environment:
         GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+      register: fetch_result
+      failed_when: fetch_result.rc != 0
+
+    - name: Verify branch exists on remote
+      ansible.builtin.fail:
+        msg: >
+          Branch '{{ repo_branch }}' does not exist on remote {{ repo_url }}.
+          Check the branch name and push it before deploying.
+      when: "'couldn\\'t find remote ref' in fetch_result.stderr"
 
     - name: Reset to latest remote commit (discard any local changes)
       ansible.builtin.command:
