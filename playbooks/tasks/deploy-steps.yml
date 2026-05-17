@@ -14,6 +14,20 @@
     COMPOSER_ALLOW_SUPERUSER: "1"
     COMPOSER_NO_INTERACTION: "1"
     COMPOSER_HOME: /root/.composer
+  register: composer_result
+  failed_when: composer_result.rc != 0
+
+- name: Fail with Composer error details
+  ansible.builtin.fail:
+    msg: |
+      Composer install failed in '{{ app_dir }}'.
+      Common causes:
+        - A package requires a PHP extension that is not installed
+        - composer.lock is out of sync with composer.json (run 'composer update' locally and commit)
+        - GitHub rate limit hit (add a GitHub OAuth token to composer config)
+      Output: {{ composer_result.stdout | default('') }}
+      Error:  {{ composer_result.stderr | default('') }}
+  when: composer_result.rc is defined and composer_result.rc != 0
 
 - name: Generate application key (required before asset build)
   ansible.builtin.shell: |
@@ -32,7 +46,7 @@
     chdir: "{{ app_dir }}"
   changed_when: false
 
-- name: Run database migrations (required before asset build for route discovery)
+- name: Run database migrations
   ansible.builtin.shell: |
     output=$(php artisan migrate --force 2>&1)
     rc=$?
@@ -44,6 +58,21 @@
     exit $rc
   args:
     chdir: "{{ app_dir }}"
+  register: migrate_result
+  failed_when: migrate_result.rc != 0
+
+- name: Fail with migration error details
+  ansible.builtin.fail:
+    msg: |
+      Database migrations failed in '{{ app_dir }}'.
+      Common causes:
+        - The database server is unreachable (check DB_HOST in .env)
+        - A migration has a SQL error (check the migration file)
+        - The database user lacks ALTER/CREATE TABLE privileges
+      Output: {{ migrate_result.stdout | default('') }}
+      Error:  {{ migrate_result.stderr | default('') }}
+      Check the full log: tail -100 {{ app_dir }}/storage/logs/laravel.log
+  when: migrate_result.rc is defined and migrate_result.rc != 0
 
 - name: Check for pnpm lockfile
   ansible.builtin.stat:
@@ -72,6 +101,20 @@
   args:
     chdir: "{{ app_dir }}"
   when: pnpm_lock.stat.exists
+  register: pnpm_build_result
+  failed_when: pnpm_build_result.rc != 0
+
+- name: Fail with pnpm build error details
+  ansible.builtin.fail:
+    msg: |
+      pnpm asset build failed in '{{ app_dir }}'.
+      Common causes:
+        - A Node.js package is missing or incompatible (try deleting node_modules and pnpm-lock.yaml locally, re-running pnpm install, and committing)
+        - A build script error in vite.config.js or similar
+        - Node.js version mismatch (check .nvmrc or engines field in package.json)
+      Output: {{ pnpm_build_result.stdout | default('') }}
+      Error:  {{ pnpm_build_result.stderr | default('') }}
+  when: pnpm_lock.stat.exists and pnpm_build_result.rc is defined and pnpm_build_result.rc != 0
 
 - name: Revert execute permissions on pnpm binaries after build
   ansible.builtin.shell: |
@@ -90,6 +133,20 @@
   args:
     chdir: "{{ app_dir }}"
   when: npm_lock.stat.exists and not pnpm_lock.stat.exists
+  register: npm_build_result
+  failed_when: npm_build_result.rc != 0
+
+- name: Fail with npm build error details
+  ansible.builtin.fail:
+    msg: |
+      npm asset build failed in '{{ app_dir }}'.
+      Common causes:
+        - package-lock.json is out of sync with package.json (run 'npm install' locally and commit)
+        - A build script error in vite.config.js or similar
+        - Node.js version mismatch (check .nvmrc or engines field in package.json)
+      Output: {{ npm_build_result.stdout | default('') }}
+      Error:  {{ npm_build_result.stderr | default('') }}
+  when: npm_lock.stat.exists and not pnpm_lock.stat.exists and npm_build_result.rc is defined and npm_build_result.rc != 0
 
 - name: Create storage symlink
   ansible.builtin.command:
@@ -143,6 +200,20 @@
     - route:cache
     - view:cache
     - event:cache
+  register: cache_result
+  failed_when: cache_result.rc != 0
+
+- name: Fail with cache rebuild error details
+  ansible.builtin.fail:
+    msg: |
+      Laravel cache rebuild failed (php artisan {{ cache_result.item }}).
+      Common causes:
+        - A syntax error or missing class in a service provider or config file
+        - A route file references a controller that does not exist
+        - Run locally to reproduce: php artisan {{ cache_result.item }}
+      Output: {{ cache_result.stdout | default('') }}
+      Error:  {{ cache_result.stderr | default('') }}
+  when: cache_result.rc is defined and cache_result.rc != 0
 
 - name: Restart PHP-FPM (clears OPcache)
   ansible.builtin.service:
@@ -151,4 +222,14 @@
 
 - name: Restart Supervisor workers
   ansible.builtin.command: "supervisorctl restart {{ app_name }}:*"
+  register: supervisor_result
   failed_when: false
+
+- name: Warn if Supervisor workers could not be restarted
+  ansible.builtin.debug:
+    msg: |
+      WARNING: Could not restart Supervisor workers for '{{ app_name }}'.
+      Queue jobs may still be running old code until workers are restarted.
+      Fix manually: ssh <server> && supervisorctl restart {{ app_name }}:*
+      Error: {{ supervisor_result.stderr | default('unknown') }}
+  when: supervisor_result.rc != 0

@@ -17,7 +17,10 @@
           - github_org is defined
           - github_repo is defined
           - repo_branch is defined
-        fail_msg: "Usage: make deploy SITE=ORG/REPO:BRANCH"
+        fail_msg: |
+          Missing SITE argument.
+          Usage: make deploy SITE=ORG/REPO:BRANCH
+          Example: make deploy SITE=AtheerSolutions/castlegroup:main
 
     - name: Derive site variables from SITE argument
       ansible.builtin.set_fact:
@@ -35,24 +38,68 @@
   tasks:
     - name: Sanity checks
       block:
+        - name: Check app directory exists
+          ansible.builtin.stat:
+            path: "{{ app_dir }}"
+          register: app_dir_stat
+        - name: Fail if app directory missing
+          ansible.builtin.fail:
+            msg: |
+              App directory '{{ app_dir }}' does not exist.
+              Run 'make setup SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}' first.
+          when: not app_dir_stat.stat.exists
+
         - name: Check app directory is a git repo
           ansible.builtin.stat:
             path: "{{ app_dir }}/.git"
           register: git_dir
         - name: Fail if not a git repo
           ansible.builtin.fail:
-            msg: "{{ app_dir }} is not a git repository. Run provision first."
+            msg: |
+              '{{ app_dir }}' exists but is not a git repository.
+              Re-run site setup to re-clone it:
+                make setup SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}
           when: not git_dir.stat.exists
+
+        - name: Check deploy key exists
+          ansible.builtin.stat:
+            path: "{{ deploy_key_path }}"
+          register: deploy_key_stat
+        - name: Fail if deploy key missing
+          ansible.builtin.fail:
+            msg: |
+              Deploy key not found at '{{ deploy_key_path }}'.
+              Re-run site setup to regenerate it:
+                make setup SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}
+          when: not deploy_key_stat.stat.exists
 
     - name: Create pre-deploy backup
       ansible.builtin.command: "/usr/local/bin/{{ app_name }}-backup"
+      register: backup_result
       failed_when: false
+
+    - name: Warn if pre-deploy backup failed
+      ansible.builtin.debug:
+        msg: |
+          WARNING: Pre-deploy backup failed — continuing anyway.
+          Check backup logs or run manually: /usr/local/bin/{{ app_name }}-backup
+          Error: {{ backup_result.stderr | default('unknown') }}
+      when: backup_result.rc != 0
 
     - name: Put application in maintenance mode
       ansible.builtin.command:
         cmd: php artisan down --render=errors::503 --retry=60
         chdir: "{{ app_dir }}"
+      register: down_result
       failed_when: false
+
+    - name: Warn if maintenance mode could not be enabled
+      ansible.builtin.debug:
+        msg: |
+          WARNING: Could not put app in maintenance mode (php artisan down failed).
+          Continuing — users may see errors during the deploy window.
+          Error: {{ down_result.stderr | default('unknown') }}
+      when: down_result.rc != 0
 
     - name: Mark app directory as safe for git
       ansible.builtin.command: git config --global --add safe.directory {{ app_dir }}
@@ -65,19 +112,32 @@
       environment:
         GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
       register: fetch_result
-      failed_when: fetch_result.rc != 0
+      failed_when: false
 
     - name: Verify branch exists on remote
       ansible.builtin.fail:
-        msg: >
-          Branch '{{ repo_branch }}' does not exist on remote {{ repo_url }}.
-          Check the branch name and push it before deploying.
-      when: "'couldn\\'t find remote ref' in fetch_result.stderr"
+        msg: |
+          Branch '{{ repo_branch }}' was not found on {{ repo_url }}.
+          List available branches with:
+            git ls-remote --heads {{ repo_url }}
+          Then retry with the correct branch:
+            make deploy SITE={{ github_org }}/{{ github_repo }}:<correct-branch>
+      when: fetch_result.rc != 0
 
     - name: Reset to latest remote commit (discard any local changes)
       ansible.builtin.command:
         cmd: git reset --hard FETCH_HEAD
         chdir: "{{ app_dir }}"
+      register: reset_result
+
+    - name: Fail with context if reset failed
+      ansible.builtin.fail:
+        msg: |
+          git reset --hard FETCH_HEAD failed in '{{ app_dir }}'.
+          Error: {{ reset_result.stderr | default('unknown') }}
+          This is unexpected — the directory may be in a broken state.
+          Investigate on the server: ssh <server> && cd {{ app_dir }} && git status
+      when: reset_result.rc is defined and reset_result.rc != 0
 
     - name: Remove untracked files and directories
       ansible.builtin.command:
@@ -93,22 +153,49 @@
             cmd: php artisan up
             chdir: "{{ app_dir }}"
           failed_when: false
-        - name: Fail the playbook
+        - name: Fail with deploy error details
           ansible.builtin.fail:
-            msg: "Deployment failed. Application lifted from maintenance mode. Check logs at {{ deploy_log }}."
+            msg: |
+              Deployment failed — application has been lifted from maintenance mode.
+              Check the full error above and the deploy log:
+                ssh <server> && tail -100 {{ deploy_log }}
+              To retry after fixing the issue:
+                make deploy SITE={{ github_org }}/{{ github_repo }}:{{ repo_branch }}
 
     - name: Lift maintenance mode
       ansible.builtin.command:
         cmd: php artisan up
         chdir: "{{ app_dir }}"
+      register: up_result
+
+    - name: Fail if maintenance mode could not be lifted
+      ansible.builtin.fail:
+        msg: |
+          Deployment succeeded but 'php artisan up' failed — app may still be in maintenance mode!
+          Fix manually on the server:
+            ssh <server> && cd {{ app_dir }} && php artisan up
+          Error: {{ up_result.stderr | default('unknown') }}
+      when: up_result.rc != 0
 
     - name: Health check — services active
       ansible.builtin.service_facts:
-    - ansible.builtin.assert:
-        that:
-          - ansible_facts.services['php' ~ php_version ~ '-fpm.service'].state == 'running'
-          - ansible_facts.services['nginx.service'].state == 'running'
-        fail_msg: "A required service (PHP-FPM or Nginx) is not running after deploy!"
+
+    - name: Health check — PHP-FPM is running
+      ansible.builtin.assert:
+        that: ansible_facts.services['php' ~ php_version ~ '-fpm.service'].state == 'running'
+        fail_msg: |
+          php{{ php_version }}-fpm is not running after deploy!
+          Check its status: ssh <server> && systemctl status php{{ php_version }}-fpm
+          Restart it: systemctl restart php{{ php_version }}-fpm
+
+    - name: Health check — Nginx is running
+      ansible.builtin.assert:
+        that: ansible_facts.services['nginx.service'].state == 'running'
+        fail_msg: |
+          Nginx is not running after deploy!
+          Check its status: ssh <server> && systemctl status nginx
+          Check config: nginx -t
+          Restart it: systemctl restart nginx
 
     - name: Health check — HTTP /up endpoint
       ansible.builtin.uri:
@@ -119,6 +206,17 @@
       delay: 5
       register: health_result
       until: health_result.status == 200
+      failed_when: health_result.status != 200
+      ignore_errors: true
+
+    - name: Fail if health check did not pass
+      ansible.builtin.fail:
+        msg: |
+          Health check failed — https://{{ domain }}/up did not return 200 after 30 seconds.
+          Services are running, so this is likely an application error.
+          Check the Laravel log:
+            ssh <server> && tail -100 {{ app_dir }}/storage/logs/laravel.log
+      when: health_result.status != 200
 
     - name: Print deploy summary
       ansible.builtin.debug:
