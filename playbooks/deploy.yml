@@ -21,15 +21,15 @@
 
     - name: Derive site variables from SITE argument
       ansible.builtin.set_fact:
-        app_name:        "{{ github_repo }}"
-        app_user:        "{{ github_repo }}"
-        app_dir:         "/var/www/{{ github_repo }}"
-        repo_url:        "git@github.com:{{ github_org }}/{{ github_repo }}.git"
+        app_name: "{{ github_repo }}"
+        app_user: "{{ github_repo }}"
+        app_dir: "/var/www/{{ github_repo }}"
+        repo_url: "git@github.com:{{ github_org }}/{{ github_repo }}.git"
 
     - name: Derive site path variables
       ansible.builtin.set_fact:
-        deploy_log:      "/var/www/{{ github_repo }}/storage/logs/deploy.log"
-        ssh_key_dir:     "/etc/{{ app_name }}/ssh"
+        deploy_log: "/var/www/{{ github_repo }}/storage/logs/deploy.log"
+        ssh_key_dir: "/etc/{{ app_name }}/ssh"
         deploy_key_path: "/etc/{{ app_name }}/ssh/id_ed25519"
 
   tasks:
@@ -58,16 +58,22 @@
       ansible.builtin.command: git config --global --add safe.directory {{ app_dir }}
       changed_when: false
 
-    - name: Pull latest code
-      ansible.builtin.git:
-        repo: "{{ repo_url }}"
-        dest: "{{ app_dir }}"
-        version: "{{ repo_branch }}"
-        key_file: "{{ deploy_key_path }}"
-        ssh_opts: "-o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
-        force: yes
+    - name: Fetch latest code from remote
+      ansible.builtin.command:
+        cmd: git fetch origin {{ repo_branch }}
+        chdir: "{{ app_dir }}"
       environment:
         GIT_SSH_COMMAND: "ssh -i {{ deploy_key_path }} -o UserKnownHostsFile={{ ssh_key_dir }}/known_hosts"
+
+    - name: Reset to latest remote commit (discard any local changes)
+      ansible.builtin.command:
+        cmd: git reset --hard FETCH_HEAD
+        chdir: "{{ app_dir }}"
+
+    - name: Remove untracked files and directories
+      ansible.builtin.command:
+        cmd: git clean -fd
+        chdir: "{{ app_dir }}"
 
     - name: Run deploy steps
       block:
